@@ -7,5 +7,5 @@ directories = Directory_Manager(
     rule_defines = [".data", "rule defines.txt"],
     allowlist = [".data", "allowlist.txt"],
     blacklist = [".data", "blacklist.txt"],
-    rule_uids = [".data", "rule uids.txt"],
+    ip_address_uids = [".data", "ip address uids.txt"],
 )
