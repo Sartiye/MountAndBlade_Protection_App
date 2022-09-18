@@ -1,4 +1,6 @@
-[16:05:38] Created the file: (logs.txt).
-[16:05:38] Created the file: (allowlist.txt).
-[16:05:38] Created the file: (blacklist.txt).
-[11:26:58] Created the file: (ip address uids.txt).
+[16:02:54] Created the file: (logs.txt).
+[16:02:54] Created the file: (settings.txt).
+[16:02:54] Created the file: (allowlist.txt).
+[16:02:54] Created the file: (blacklist.txt).
+[16:02:54] Created the file: (ip address uids.txt).
+[16:02:55] Pinged 104.22.2.28

@@ -5,6 +5,7 @@ import time
 import random
 import string as string_lib
 import datetime
+import socket
 import pyshark
 import ipaddress
 from watchdog.observers import Observer
@@ -36,7 +37,7 @@ def string_bool_meaning(string):
     true_strings = ["1", "true", "yes", "+"]
     return string.lower() in true_strings
 
-def import_errror(directory, object_name, line, exception):
+def import_error(directory, object_name, line, exception):
     logging_print("While importing \"{}\", the {} at line {} gave an error: ({}).".format(directory.basename(), object_name, line, exception))
 
 def get_random_string(length):
@@ -46,7 +47,7 @@ def get_random_string(length):
     return "".join(random_list)
 
 base_settings = {
-    "google cloud" : {
+    "gcloud" : {
         "active" : False,
     },
     "advanced firewall" : {
@@ -62,44 +63,49 @@ base_settings = {
         "clean start" : False,
         "randomize" : True,
     },
+    "cloudflare" : {
+        "host" : "warbandmain.taleworlds.com",
+        "port" : 80,
+        "secondary ip" : -1,
+    },
 }
 
 ip_lists = {"allowlist": set(), "blacklist": set()}
-current_settings = base_settings.copy()
+settings = base_settings.copy()
 
 def import_settings(directory):
-    global current_settings
-    current_settings = base_settings.copy()
+    global settings
+    settings = base_settings.copy()
     check_file(directory)
     with open(directory, mode = "r", encoding = "utf-8") as file:
         data = file.read()
     if not data:
         return
     category = None
-    settings = data.split("\n")
-    for i, setting in enumerate(settings, start = 1):
+    raw_settings = data.split("\n")
+    for i, setting in enumerate(raw_settings, start = 1):
         setting = setting.split("#")[0].replace("\t", "").strip(" ")
         if not setting:
             continue
         if setting[0] == "[" and setting[-1] == "]":
             category = setting[1:-1]
-            if not category in current_settings:
-                import_errror(directory, "category", i, "That category does not exist.")
+            if not category in settings:
+                import_error(directory, "category", i, "That category does not exist.")
                 category = None
         elif category:
             setting, value = [part.strip(" ") for part in setting.split("=")]
-            if not setting in current_settings[category]:
-                import_errror(directory, "setting", i, "That setting does not exist.")
-            if type(current_settings[category][setting]) == bool:
+            if not setting in settings[category]:
+                import_error(directory, "setting", i, "That setting does not exist.")
+            if type(settings[category][setting]) == bool:
                 value = string_bool_meaning(value)
-            elif type(current_settings[category][setting]) == int:
+            elif type(settings[category][setting]) == int:
                 try:
                     value = int(value)
                 except exception:
-                    import_errror(directory, "setting", i, exception)
-            current_settings[category][setting] = value
+                    import_error(directory, "setting", i, exception)
+            settings[category][setting] = value
         else:
-            import_errror(directory, "setting", i, "A category must be defined.")
+            import_error(directory, "setting", i, "A category must be defined.")
 
 def import_ip_list(directory):
     ip_list = ip_lists[directory.key]
@@ -117,7 +123,7 @@ def import_ip_list(directory):
         try:
             ipaddress.IPv4Network(ip_address, strict = False)
         except (ipaddress.AddressValueError, ipaddress.NetmaskValueError) as exception:
-            import_errror(directory, "ip address", i, exception)
+            import_error(directory, "ip address", i, exception)
             continue
         ip_list.add(ip_address)
 
@@ -143,7 +149,7 @@ class IP_Address_UID_Manager():
             try:
                 ipaddress.IPv4Network(ip_address, strict = False)
             except (ipaddress.AddressValueError, ipaddress.NetmaskValueError) as exception:
-                import_errror(directory, "ip address", i, exception)
+                import_error(directory, "ip address", i, exception)
                 continue
             self.ip_address_unique_ids[ip_address] = unique_id
             self.unique_ids.add(unique_id)
@@ -199,6 +205,44 @@ class Rule_Updater(threading.Thread):
             
             print("Done!")
 
+def cloudflare_communicator():
+    ping_message = "\
+GET /handlerservers.ashx?type=ping&keys&port={port}&hidden=false HTTP/1.1\r\n\
+Connection: Keep-Alive\r\n\
+User-Agent: Mount Blade HTTP\r\n\
+Host: {host}\
+\r\n\r\n"
+    confirm_ping_message = "\
+GET /handlerservers.ashx?type=confirmping&port={port}&rand={code}&hidden=false HTTP/1.1\r\n\
+Connection: Keep-Alive\r\n\
+User-Agent: Mount Blade HTTP\r\n\
+Host: {host}\
+\r\n\r\n"
+    host = socket.gethostbyname(settings["cloudflare"]["host"])
+    port = settings["cloudflare"]["port"]
+    secondary_ip = settings["cloudflare"]["secondary ip"]
+    time.sleep(1)
+    while True:
+        try:
+            if secondary_ip != -1:
+                os.system("route add {} {}".format(host, secondary_ip))
+            server = socket.create_connection((host, port))
+            server.send(ping_message.format(port = port, host = host).encode())
+            response = server.recv(1024).decode()
+            code = response.split("\r\n\r\n")[1]
+            server.send(confirm_ping_message.format(port = port, code = code, host = host).encode())
+            response = server.recv(1024).decode()
+            server.close()
+            if secondary_ip != -1:
+                os.system("route delete {}".format(host))
+            logging_print("Pinged {}".format(host))
+            time.sleep(300)
+        except KeyboardInterrupt:
+            break
+        except:
+            logging_print("cloudflare communicator:", traceback.format_exc())
+            time.sleep(10)
+
 try:
     import_settings(directories.settings)
     
@@ -216,6 +260,8 @@ try:
     rule_updater.update = True
     rule_updater.force = True
     rule_updater.start()
+
+    threading.Thread(target = cloudflare_communicator).start()
 
 except:
     logging_print(traceback.format_exc())
