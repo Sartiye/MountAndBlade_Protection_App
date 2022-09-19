@@ -1,5 +1,7 @@
-[14:37:34] Created the file: (logs.txt).
-[14:37:34] Created the file: (configs.txt).
-[14:37:34] Created the file: (allowlist.txt).
-[14:37:34] Created the file: (blacklist.txt).
-[14:37:34] Created the file: (ip uids.txt).
+[15:22:10] Created the file: (logs.txt).
+[15:22:10] Created the file: (configs.txt).
+[15:22:10] Created the file: (commands.txt).
+[15:22:10] Created the file: (allowlist.txt).
+[15:22:10] Created the file: (blacklist.txt).
+[15:22:11] Created the file: (ip uids.txt).
+[15:40:29] Pinged warbandmain.taleworlds.com (104.22.2.28)

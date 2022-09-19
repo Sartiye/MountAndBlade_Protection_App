@@ -56,6 +56,7 @@ base_configs = {
     "pyshark" : {
         "active" : False,
         "port" : 25556,
+        "host" : -1,
     },
     "dumpcap" : {
         "active" : False,
@@ -65,19 +66,25 @@ base_configs = {
         "randomize" : True,
     },
     "cloudflare" : {
-        "active" : False,
-        "host" : "warbandmain.taleworlds.com",
+        "active" : True,
+        "hostname" : "warbandmain.taleworlds.com",
         "port" : 80,
-        "secondary ip" : -1,
     },
     "dumpcap" : {
         "active" : False,
         "filename" : "dumpcap",
     },
 }
+base_commands = {
+    "cloudflare" : {
+        "ping" : "",
+        "confirm ping" : "",
+    }
+}
 
 ip_lists = {"allowlist": set(), "blacklist": set()}
 configs = base_configs.copy()
+commands = base_commands.copy()
 
 def import_configs(directory):
     global configs
@@ -96,12 +103,12 @@ def import_configs(directory):
         if config[0] == "[" and config[-1] == "]":
             category = config[1:-1]
             if not category in configs:
-                import_error(directory, "category", i, "That category does not exist.")
+                import_error(directory, "category", i, "The category does not exist.")
                 category = None
         elif category:
             config, value = [part.strip(" ") for part in config.split("=")]
             if not config in configs[category]:
-                import_error(directory, "config", i, "That config does not exist.")
+                import_error(directory, "config", i, "The config does not exist.")
             if type(configs[category][config]) == bool:
                 value = string_bool_meaning(value)
             elif type(configs[category][config]) == int:
@@ -112,6 +119,47 @@ def import_configs(directory):
             configs[category][config] = value
         else:
             import_error(directory, "config", i, "A category must be defined.")
+
+def import_commands(directory):
+    global commands
+    commands = base_commands.copy()
+    check_file(directory)
+    with open(directory, mode = "r", encoding = "utf-8") as file:
+        data = file.read()
+    if not data:
+        return
+    command_tuple = None
+    raw_commands = data.split("\n")
+    for i, line in enumerate(raw_commands, start = 1):
+        line = line.split("#")[0].replace("\t", "").strip(" ")
+        if not line:
+            continue
+        if line[0] == "[" and line[-1] == "]":
+            line = line[1:-1]
+            if line in ["", "\\"]:
+                command_tuple = None
+                continue
+            parts = line.split(".")
+            if not len(parts) == 2:
+                import_error(directory, "command", i, "The command defined incorrectly. Syntax: \"[<category>.<command>]\"")
+                command_tuple = None
+                continue
+            category, command = parts
+            if not category in commands:
+                import_error(directory, "category", i, "The category does not exist.")
+                command_tuple = None
+                continue
+            if not command in commands[category]:
+                import_error(directory, "command", i, "The command does not exist.")
+                command_tuple = None
+                continue
+            command_tuple = (category, command)
+        elif command_tuple != None:
+            category, command = command_tuple
+            line = line.replace("\\r", "\r").replace("\\n", "\n")
+            commands[category][command] += line
+        else:
+            import_error(directory, "command", i, "A command must be defined.")
 
 def import_ip_list(directory):
     ip_list = ip_lists[directory.key]
@@ -212,39 +260,35 @@ class Rule_Updater(threading.Thread):
             print("Done!")
 
 def cloudflare_communicator():
-    ping_message = "\
-GET /handlerservers.ashx?type=ping&keys&port={port}&hidden=false HTTP/1.1\r\n\
-Connection: Keep-Alive\r\n\
-User-Agent: Mount Blade HTTP\r\n\
-Host: {hostname}\
-\r\n\r\n"
-    confirm_ping_message = "\
-GET /handlerservers.ashx?type=confirmping&port={port}&rand={code}&hidden=false HTTP/1.1\r\n\
-Connection: Keep-Alive\r\n\
-User-Agent: Mount Blade HTTP\r\n\
-Host: {hostname}\
-\r\n\r\n"
-    time.sleep(1)
-    while True:
+    can_run = True
+    for key, command in commands["cloudflare"].items():
+        if not command:
+            logging_print("Warning! You need the command [cloudflare.{}] defined in order to activate cloudflare.".format(key))
+            can_run = False
+    while can_run:
         try:
             host = socket.gethostbyname(configs["cloudflare"]["hostname"])
-            if secondary_ip != -1:
-                os.system("route add {} {}".format(host, configs["cloudflare"]["secondary ip"]))
+            if configs["pyshark"]["host"] != -1:
+                os.system("route add {} {}".format(host, configs["pyshark"]["host"]))
             server = socket.create_connection((host, configs["cloudflare"]["port"]))
-            server.send(ping_message.format(
-                port = configs["pyshark"]["port"],
-                hostname = configs["cloudflare"]["hostname"]
-            ).encode())
+            server.send(
+                commands["cloudflare"]["ping"].format(
+                    port = configs["pyshark"]["port"],
+                    hostname = configs["cloudflare"]["hostname"]
+                ).encode()
+            )
             response = server.recv(1024).decode()
             code = response.split("\r\n\r\n")[1]
-            server.send(confirm_ping_message.format(
-                port = configs["pyshark"]["port"],
-                code = code,
-                host = configs["cloudflare"]["hostname"],
-            ).encode())
+            server.send(
+                commands["cloudflare"]["confirm ping"].format(
+                    port = configs["pyshark"]["port"],
+                    code = code,
+                    hostname = configs["cloudflare"]["hostname"],
+                ).encode()
+            )
             response = server.recv(1024).decode()
             server.close()
-            if secondary_ip != -1:
+            if configs["pyshark"]["host"] != -1:
                 os.system("route delete {}".format(host))
             logging_print("Pinged {} ({})".format(configs["cloudflare"]["hostname"], host))
             time.sleep(300)
@@ -254,9 +298,12 @@ Host: {hostname}\
 
 try:
     import_configs(directories.configs)
+    import_commands(directories.commands)
     
     import_ip_list(directories.allowlist)
     import_ip_list(directories.blacklist)
+
+    time.sleep(1)
 
     ip_uid_manager = IP_UID_Manager(directories.ip_uids)
     ip_uid_manager.import_directory()
@@ -270,9 +317,10 @@ try:
     rule_updater.force = True
     rule_updater.start()
 
+    time.sleep(1)
+    
     if configs["cloudflare"]["active"]:
         threading.Thread(target = cloudflare_communicator).start()
-
 except:
     logging_print(traceback.format_exc())
     sys.exit()

@@ -1,5 +1,8 @@
-[14:38:17] Created the file: (logs.txt).
-[14:38:17] Created the file: (configs.txt).
-[14:38:17] Created the file: (allowlist.txt).
-[14:38:17] Created the file: (blacklist.txt).
-[14:38:17] Created the file: (ip uids.txt).
+[15:42:03] Created the file: (logs.txt).
+[15:42:03] Created the file: (configs.txt).
+[15:42:03] Created the file: (commands.txt).
+[15:42:03] Created the file: (allowlist.txt).
+[15:42:03] Created the file: (blacklist.txt).
+[15:42:04] Created the file: (ip uids.txt).
+[15:42:05] Warning! You need the command [cloudflare.ping] defined in order to activate cloudflare.
+[15:42:05] Warning! You need the command [cloudflare.confirm ping] defined in order to activate cloudflare.
