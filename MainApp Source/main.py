@@ -8,28 +8,28 @@ import datetime
 import socket
 import pyshark
 import ipaddress
+import subprocess
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 from module_directories import directories
 
-#C:\Program Files\Wireshark\dumpcap -b filesize:100000 -b printname:stdout -w C:\Temp\mycap.pcap -i Wi-Fi
-
 def check_file(directory):
     try:
         with open(directory, mode = "x", encoding = "utf-8"):
-            logging_print("Created the file: ({}).".format(directory.basename()))
+            print("Created the file: ({}).".format(directory.basename()))
     except FileExistsError:
         pass
 
-def logging_print(*string, sep = " ", end = "\n"):
-    print("[{}]".format(datetime.datetime.now().strftime("%H:%M:%S")), *string, sep = sep, end = end)
-    directories.logs.format(strftime = datetime.datetime.now().strftime("%Y_%m_%d"))
-    check_file(directories.logs)
-    file = open(directories.logs, "a", encoding="utf-8")
+python_print = print
+def print(*string, sep = " ", end = "\n"):
+    python_print("[{}]".format(datetime.datetime.now().strftime("%H:%M:%S")), *string, sep = sep, end = end)
+    directories.log.format(strftime = datetime.datetime.now().strftime("%Y_%m_%d"))
+    check_file(directories.log)
+    file = open(directories.log, "a", encoding="utf-8")
     old_stdout = sys.stdout
     sys.stdout = file
-    print("[{}]".format(datetime.datetime.now().strftime("%H:%M:%S")), *string, sep = sep, end = end)
+    python_print("[{}]".format(datetime.datetime.now().strftime("%H:%M:%S")), *string, sep = sep, end = end)
     sys.stdout = old_stdout
     file.close()
 
@@ -38,7 +38,14 @@ def string_bool_meaning(string):
     return string.lower() in true_strings
 
 def import_error(directory, object_name, line, exception):
-    logging_print("While importing \"{}\", the {} at line {} gave an error: ({}).".format(directory.basename(), object_name, line, exception))
+    print("While importing \"{}\", the {} at line {} gave an error: ({}).".format(directory.basename(), object_name, line, exception))
+
+def check_commands(category, not_necessary_commands):
+    for key, command in commands[category].items():
+        if not command and not key in not_necessary_commands:
+            print("Warning! You need the command [{0}.{1}] defined in order to activate {0}.".format(category, key))
+            return False
+    return True
 
 def get_random_string(length):
     random_list = []
@@ -58,28 +65,32 @@ base_configs = {
         "port" : 25556,
         "host" : -1,
     },
-    "dumpcap" : {
-        "active" : False,
-    },
     "IP UIDs" : {
         "clean start" : False,
-        "randomize" : True,
+        "randomize" : False,
     },
     "cloudflare" : {
-        "active" : True,
+        "active" : False,
         "hostname" : "warbandmain.taleworlds.com",
         "port" : 80,
     },
     "dumpcap" : {
         "active" : False,
-        "filename" : "dumpcap",
+        "application" : "C:\Program Files\Wireshark\dumpcap",
+        "filesize" : 100000,
+        "printname" : "stdout",
+        "filename" : "mycap",
+        "interface" : "Ethernet",
     },
 }
 base_commands = {
     "cloudflare" : {
         "ping" : "",
         "confirm ping" : "",
-    }
+    },
+    "dumpcap" : {
+        "command" : "",
+    },
 }
 
 ip_lists = {"allowlist": set(), "blacklist": set()}
@@ -186,6 +197,7 @@ class IP_UID_Manager():
         self.directory = directory
         self.ip_uids = dict()
         self.uids = set()
+        self.uid_count = 1
 
     def import_directory(self):
         self.ip_uids.clear()
@@ -207,11 +219,19 @@ class IP_UID_Manager():
                 continue
             self.ip_uids[ip_address] = unique_id
             self.uids.add(unique_id)
-
+        for i in range(len(self.uids)):
+            if not str(self.uid_count) in self.uids:
+                break
+            self.uid_count += 1
+    
     def generate_new_unique_id(self):
         while True:
-            unique_id = get_random_string(6)
+            if configs["IP UIDs"]["randomize"]:
+                unique_id = get_random_string(6)
+            else:
+                unique_id = str(self.uid_count)
             if unique_id in self.uids:
+                self.uid_count += 1
                 continue
             self.uids.add(unique_id)
             return unique_id
@@ -260,12 +280,9 @@ class Rule_Updater(threading.Thread):
             print("Done!")
 
 def cloudflare_communicator():
-    can_run = True
-    for key, command in commands["cloudflare"].items():
-        if not command:
-            logging_print("Warning! You need the command [cloudflare.{}] defined in order to activate cloudflare.".format(key))
-            can_run = False
-    while can_run:
+    if not check_commands("cloudflare", []):
+        return
+    while True:
         try:
             host = socket.gethostbyname(configs["cloudflare"]["hostname"])
             if configs["pyshark"]["host"] != -1:
@@ -290,12 +307,29 @@ def cloudflare_communicator():
             server.close()
             if configs["pyshark"]["host"] != -1:
                 os.system("route delete {}".format(host))
-            logging_print("Pinged {} ({})".format(configs["cloudflare"]["hostname"], host))
+            print("Pinged {} ({})".format(configs["cloudflare"]["hostname"], host))
             time.sleep(300)
         except:
-            logging_print("cloudflare communicator:", traceback.format_exc())
+            print("cloudflare communicator:", traceback.format_exc())
             time.sleep(10)
 
+def dumpcap_logger():
+    if not check_commands("dumpcap", []):
+        return
+    try:
+        kwargs = {
+            "application" : configs["dumpcap"]["application"],
+            "filesize" : configs["dumpcap"]["filesize"],
+            "printname" : configs["dumpcap"]["printname"],
+            "write" : directories.pcap.format(filename = configs["dumpcap"]["filename"]),
+            "interface" : configs["dumpcap"]["interface"],
+        }
+        parameters = [parameter.format(**kwargs) for parameter in commands["dumpcap"]["command"].split(" ")]
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        subprocess.Popen(parameters, startupinfo = startupinfo).wait()
+    except:
+        print("dumpcap logger:", traceback.format_exc())
 try:
     import_configs(directories.configs)
     import_commands(directories.commands)
@@ -321,6 +355,9 @@ try:
     
     if configs["cloudflare"]["active"]:
         threading.Thread(target = cloudflare_communicator).start()
+
+    if configs["dumpcap"]["active"]:
+        threading.Thread(target = dumpcap_logger).start()
 except:
-    logging_print(traceback.format_exc())
+    print(traceback.format_exc())
     sys.exit()

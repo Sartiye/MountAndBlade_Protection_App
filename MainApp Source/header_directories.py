@@ -15,6 +15,7 @@ class Directory():
     def __init__(self, parent, key, raw_directory):
         self.parent = parent
         self.key = key
+        self.kwargs = dict()
         string_parts = []
         for i, part in enumerate(raw_directory):
             if part == ".":
@@ -25,11 +26,14 @@ class Directory():
                 string_parts.append(part)
         self.raw_string = os.path.join(*string_parts)
 
-    def format(self, *args, **kwargs):
-        kwargs.update(self.parent.kwargs)
+    def format(self, **kwargs):
+        self.kwargs.update(kwargs)
+        return self.string()
 
     def string(self):
-        return self.raw_string.format(**self.parent.kwargs)
+        current_kwargs = self.kwargs.copy()
+        current_kwargs.update(self.parent.kwargs)
+        return self.raw_string.format(**current_kwargs)
 
     def __str__(self):
         return self.string()
