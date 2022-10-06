@@ -22,13 +22,13 @@ if not admin.isUserAdmin():
 def check_file(directory):
     try:
         with open(directory, mode = "x", encoding = "utf-8"):
-            print("Created the file: ({}).".format(directory.basename()))
+            print("Created the file: \"{}\".".format(directory.basename()))
     except FileExistsError:
         pass
 
 def clean_file(directory):
     with open(directory, mode = "w", encoding = "utf-8"):
-        print("Cleaned the file: ({}).".format(directory.basename()))
+        print("Cleaned the file: \"{}\".".format(directory.basename()))
 
 python_print = print
 def print(*string, sep = " ", end = "\n"):
@@ -269,11 +269,7 @@ class IP_UID_Manager():
 class Event_Handler(FileSystemEventHandler):
     def __init__(self):
         FileSystemEventHandler.__init__(self)
-        self.ignore = False
     def on_modified(self, event):
-        self.ignore = not self.ignore
-        if self.ignore:
-            return
         for directory in [directories.allowlist, directories.blacklist]:
             if event.src_path == directory.string():
                 import_ip_list(directory)
@@ -300,7 +296,7 @@ class Rule_Updater(threading.Thread):
             print("Updating IP List rules...")
             ip_list_to_remove = self.ip_list.difference(new_ip_list)
             self.ip_list = new_ip_list
-            
+            configs["IP UIDs"]["clean start"] = False
             print("Done!")
 
 def pyshark_listener():
@@ -313,7 +309,7 @@ def pyshark_listener():
             ),
         )
         print(
-            "Started listening interface: \"{}\", host: \"{}\", port: \"{}\"".format(
+            "Started listening interface: \"{}\", host: {}, port: {}".format(
                 configs["pyshark"]["interface"],
                 configs["pyshark"]["host"],
                 configs["pyshark"]["port"],
@@ -323,8 +319,10 @@ def pyshark_listener():
             source_ip = packet.ip.src
             if source_ip == configs["pyshark"]["host"]: continue
             if not source_ip in ip_lists["allowlist"]:
-                with open(directories.allowlist, "a") as file:
-                    file.write("\n" + source_ip)
+                with open(directories.allowlist, "r+") as file:
+                    data = file.read()
+                    file.write(("" if not data or data[-1] == "\n" else "\n") + source_ip)
+                ip_lists["allowlist"].add(source_ip)
                 print("Verified new ip address: {}".format(source_ip))
     except:
         print("pyshark listener:", traceback.format_exc())
@@ -355,9 +353,16 @@ def cloudflare_communicator():
             )
             response = server.recv(1024).decode()
             server.close()
+            print(
+                "Pinged host: {} ({}), port: {}, gateway: {}".format(
+                    configs["cloudflare"]["hostname"],
+                    host,
+                    configs["pyshark"]["port"],
+                    configs["cloudflare"]["gateway"] if configs["cloudflare"]["gateway"] else "On-link",
+                )
+            )
             if configs["cloudflare"]["gateway"]:
                 os.system("route delete {}".format(host))
-            print("Pinged {} ({})".format(configs["cloudflare"]["hostname"], host))
             time.sleep(300)
         except:
             print("cloudflare communicator:", traceback.format_exc())
@@ -413,6 +418,7 @@ try:
     
     if configs["cloudflare"]["active"]:
         threading.Thread(target = cloudflare_communicator).start()
+        time.sleep(1)
 
     if configs["dumpcap"]["active"]:
         threading.Thread(target = dumpcap_logger).start()
