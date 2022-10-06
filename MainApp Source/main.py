@@ -14,6 +14,11 @@ from watchdog.events import FileSystemEventHandler
 
 from module_directories import directories
 
+import admin
+if not admin.isUserAdmin():
+    admin.runAsAdmin(wait = False)
+    sys.exit(0)
+
 def check_file(directory):
     try:
         with open(directory, mode = "x", encoding = "utf-8"):
@@ -85,6 +90,7 @@ base_configs = {
         "active" : False,
         "hostname" : "warbandmain.taleworlds.com",
         "port" : 80,
+        "gateway" : "",
     },
     "dumpcap" : {
         "active" : False,
@@ -329,8 +335,8 @@ def cloudflare_communicator():
     while True:
         try:
             host = socket.gethostbyname(configs["cloudflare"]["hostname"])
-            if configs["pyshark"]["host"] != base_host:
-                os.system("route add {} {}".format(host, configs["pyshark"]["host"]))
+            if configs["cloudflare"]["gateway"]:
+                os.system("route add {} {}".format(host, configs["cloudflare"]["gateway"]))
             server = socket.create_connection((host, configs["cloudflare"]["port"]))
             server.send(
                 commands["cloudflare"]["ping"].format(
@@ -349,7 +355,7 @@ def cloudflare_communicator():
             )
             response = server.recv(1024).decode()
             server.close()
-            if configs["pyshark"]["host"] != base_host:
+            if configs["cloudflare"]["gateway"]:
                 os.system("route delete {}".format(host))
             print("Pinged {} ({})".format(configs["cloudflare"]["hostname"], host))
             time.sleep(300)
