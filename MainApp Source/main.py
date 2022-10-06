@@ -21,6 +21,10 @@ def check_file(directory):
     except FileExistsError:
         pass
 
+def clean_file(directory):
+    with open(directory, mode = "w", encoding = "utf-8"):
+        print("Cleaned the file: ({}).".format(directory.basename()))
+
 python_print = print
 def print(*string, sep = " ", end = "\n"):
     python_print("[{}]".format(datetime.datetime.now().strftime("%H:%M:%S")), *string, sep = sep, end = end)
@@ -53,7 +57,13 @@ def get_random_string(length):
         random_list.append(random.choice(string_lib.ascii_letters + string_lib.digits))
     return "".join(random_list)
 
+base_host = socket.gethostbyname(socket.gethostname())
 base_configs = {
+    "warband" : {
+        "interface" : "Ethernet",
+        "host" : base_host,
+        "port" : 7240,
+    },
     "gcloud" : {
         "active" : False,
     },
@@ -62,8 +72,10 @@ base_configs = {
     },
     "pyshark" : {
         "active" : False,
+        "interface" : "Ethernet",
+        "filter" : "host {host} && port {port}",
+        "host" : base_host,
         "port" : 25556,
-        "host" : -1,
     },
     "IP UIDs" : {
         "clean start" : False,
@@ -80,7 +92,7 @@ base_configs = {
         "filesize" : 100000,
         "printname" : "stdout",
         "filename" : "mycap",
-        "interface" : "Ethernet",
+        "filter" : "host {host} && port {port}",
     },
 }
 base_commands = {
@@ -180,6 +192,9 @@ def import_ip_list(directory):
         data = file.read()
     if not data:
         return
+    if configs["IP UIDs"]["clean start"]:
+        clean_file(directory)
+        return
     ip_addresses = data.split("\n")
     for i, ip_address in enumerate(ip_addresses, start = 1):
         ip_address = ip_address.split("#")[0].strip(" ").strip("\t")
@@ -205,6 +220,9 @@ class IP_UID_Manager():
         with open(self.directory, mode = "r", encoding = "utf-8") as file:
             data = file.read()
         if not data:
+            return
+        if configs["IP UIDs"]["clean start"]:
+            clean_file(self.directory)
             return
         lines = data.split("\n")
         for i, line in enumerate(lines, start = 1):
@@ -279,13 +297,39 @@ class Rule_Updater(threading.Thread):
             
             print("Done!")
 
+def pyshark_listener():
+    try:
+        capture = pyshark.LiveCapture(
+            configs["pyshark"]["interface"],
+            bpf_filter = configs["pyshark"]["filter"].format(
+                host = configs["pyshark"]["host"],
+                port = configs["pyshark"]["port"]
+            ),
+        )
+        print(
+            "Started listening interface: \"{}\", host: \"{}\", port: \"{}\"".format(
+                configs["pyshark"]["interface"],
+                configs["pyshark"]["host"],
+                configs["pyshark"]["port"],
+            )
+        )
+        for packet in capture:
+            source_ip = packet.ip.src
+            if source_ip == configs["pyshark"]["host"]: continue
+            if not source_ip in ip_lists["allowlist"]:
+                with open(directories.allowlist, "a") as file:
+                    file.write("\n" + source_ip)
+                print("Verified new ip address: {}".format(source_ip))
+    except:
+        print("pyshark listener:", traceback.format_exc())
+
 def cloudflare_communicator():
     if not check_commands("cloudflare", []):
         return
     while True:
         try:
             host = socket.gethostbyname(configs["cloudflare"]["hostname"])
-            if configs["pyshark"]["host"] != -1:
+            if configs["pyshark"]["host"] != base_host:
                 os.system("route add {} {}".format(host, configs["pyshark"]["host"]))
             server = socket.create_connection((host, configs["cloudflare"]["port"]))
             server.send(
@@ -305,7 +349,7 @@ def cloudflare_communicator():
             )
             response = server.recv(1024).decode()
             server.close()
-            if configs["pyshark"]["host"] != -1:
+            if configs["pyshark"]["host"] != base_host:
                 os.system("route delete {}".format(host))
             print("Pinged {} ({})".format(configs["cloudflare"]["hostname"], host))
             time.sleep(300)
@@ -322,7 +366,8 @@ def dumpcap_logger():
             "filesize" : configs["dumpcap"]["filesize"],
             "printname" : configs["dumpcap"]["printname"],
             "write" : directories.pcap.format(filename = configs["dumpcap"]["filename"]),
-            "interface" : configs["dumpcap"]["interface"],
+            "interface" : configs["warband"]["interface"],
+            "filter" : configs["dumpcap"]["filter"].format(host = configs["warband"]["host"], port = configs["warband"]["port"]),
         }
         parameters = [parameter.format(**kwargs) for parameter in commands["dumpcap"]["command"].split(" ")]
         startupinfo = subprocess.STARTUPINFO()
@@ -331,8 +376,12 @@ def dumpcap_logger():
     except:
         print("dumpcap logger:", traceback.format_exc())
 try:
+    print("Loading...")
     import_configs(directories.configs)
     import_commands(directories.commands)
+
+    if configs["IP UIDs"]["clean start"]:
+        print("Initaiting a clean start.")
     
     import_ip_list(directories.allowlist)
     import_ip_list(directories.blacklist)
@@ -352,6 +401,9 @@ try:
     rule_updater.start()
 
     time.sleep(1)
+
+    if configs["pyshark"]["active"]:
+        threading.Thread(target = pyshark_listener).start()
     
     if configs["cloudflare"]["active"]:
         threading.Thread(target = cloudflare_communicator).start()

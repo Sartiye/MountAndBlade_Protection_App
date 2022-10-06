@@ -11,4 +11,4 @@ User-Agent: Mount Blade HTTP\r\n
 Host: {hostname}\r\n
 \r\n
 [dumpcap.command]
-{application} -b filesize:{filesize} -b printname:{printname} -w {write} -i {interface}
+{application} -b filesize:{filesize} -b printname:{printname} -w {write} -i {interface} -f {filter}
