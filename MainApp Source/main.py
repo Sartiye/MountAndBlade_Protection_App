@@ -1,58 +1,63 @@
-import sys, os
+import sys
+import os
 import traceback
-import threading
+import msvcrt
 import time
 import random
 import string as string_lib
-import datetime
 import socket
+import threading
+import subprocess
+import datetime
 import pyshark
 import ipaddress
-import subprocess
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 from module_directories import directories
-
 import admin
+
 if not admin.isUserAdmin():
     admin.runAsAdmin(wait = False)
     sys.exit(0)
 
+def print_(*string, sep = " ", end = "\n", flush = False):
+    print("[{}]".format(datetime.datetime.now().strftime("%H:%M:%S")), *string, sep = sep, end = end, flush = flush)
+    directories.log.format(strftime = datetime.datetime.now().strftime("%Y_%m_%d"))
+    check_file(directories.log)
+    with open(directories.log, "a", encoding="utf-8") as file:
+        old_stdout = sys.stdout
+        sys.stdout = file
+        print("[{}]".format(datetime.datetime.now().strftime("%H:%M:%S")), *string, sep = sep, end = end, flush = flush)
+        sys.stdout = old_stdout
+
 def check_file(directory):
     try:
         with open(directory, mode = "x", encoding = "utf-8"):
-            print("Created the file: \"{}\".".format(directory.basename()))
+            print_("Created the file: \"{}\".".format(directory.basename()))
     except FileExistsError:
         pass
 
 def clean_file(directory):
     with open(directory, mode = "w", encoding = "utf-8"):
-        print("Cleaned the file: \"{}\".".format(directory.basename()))
+        print_("Cleaned the file: \"{}\".".format(directory.basename()))
 
-python_print = print
-def print(*string, sep = " ", end = "\n"):
-    python_print("[{}]".format(datetime.datetime.now().strftime("%H:%M:%S")), *string, sep = sep, end = end)
-    directories.log.format(strftime = datetime.datetime.now().strftime("%Y_%m_%d"))
-    check_file(directories.log)
-    file = open(directories.log, "a", encoding="utf-8")
-    old_stdout = sys.stdout
-    sys.stdout = file
-    python_print("[{}]".format(datetime.datetime.now().strftime("%H:%M:%S")), *string, sep = sep, end = end)
-    sys.stdout = old_stdout
-    file.close()
+def append_new_line(directory, string):
+    with open(directory, "r+") as file:
+        data = file.read()
+        file.write(("" if not data or data[-1] == "\n" else "\n") + string)
 
 def string_bool_meaning(string):
     true_strings = ["1", "true", "yes", "+"]
     return string.lower() in true_strings
 
 def import_error(directory, object_name, line, exception):
-    print("While importing \"{}\", the {} at line {} gave an error: ({}).".format(directory.basename(), object_name, line, exception))
+    print_("While importing \"{}\", the {} at line {} gave an error: ({}).".format(directory.basename(), object_name, line, exception))
 
 def check_commands(category, not_necessary_commands):
     for key, command in commands[category].items():
         if not command and not key in not_necessary_commands:
-            print("Warning! You need the command [{0}.{1}] defined in order to activate {0}.".format(category, key))
+            print_("Warning! You need the command [{0}.{1}] defined in order to activate {0}.".format(category, key))
             return False
     return True
 
@@ -80,7 +85,7 @@ base_configs = {
         "interface" : "Ethernet",
         "filter" : "host {host} && port {port}",
         "host" : base_host,
-        "port" : 25556,
+        "port" : 25161,
     },
     "IP UIDs" : {
         "clean start" : False,
@@ -99,6 +104,9 @@ base_configs = {
         "printname" : "stdout",
         "filename" : "mycap",
         "filter" : "host {host} && port {port}",
+    },
+    "eval" : {
+        "active" : False,
     },
 }
 base_commands = {
@@ -263,8 +271,10 @@ class IP_UID_Manager():
     def get_unique_id(self, ip_address):
         if ip_address in self.ip_uids:
             return self.ip_uids[ip_address]
-        self.ip_uids[ip_address] = self.generate_new_unique_id()
-        return self.ip_uids[ip_address]
+        unique_id = self.generate_new_unique_id()
+        self.ip_uids[ip_address] = unique_id
+        append_new_line(directories.ip_uids, "{} : {}".format(ip_address, unique_id))
+        return unique_id
 
 class Event_Handler(FileSystemEventHandler):
     def __init__(self):
@@ -293,11 +303,11 @@ class Rule_Updater(threading.Thread):
             if not self.force and self.ip_list == new_ip_list:
                 time.sleep(1); continue
             self.force = False
-            print("Updating IP List rules...")
+            print_("Updating IP List rules...")
             ip_list_to_remove = self.ip_list.difference(new_ip_list)
             self.ip_list = new_ip_list
             configs["IP UIDs"]["clean start"] = False
-            print("Done!")
+            print_("Done!")
 
 def pyshark_listener():
     try:
@@ -308,24 +318,23 @@ def pyshark_listener():
                 port = configs["pyshark"]["port"]
             ),
         )
-        print(
+        print_(
             "Started listening interface: \"{}\", host: {}, port: {}".format(
                 configs["pyshark"]["interface"],
                 configs["pyshark"]["host"],
                 configs["pyshark"]["port"],
             )
         )
-        for packet in capture:
+        for packet in capture.sniff_continuously():
             source_ip = packet.ip.src
             if source_ip == configs["pyshark"]["host"]: continue
             if not source_ip in ip_lists["allowlist"]:
-                with open(directories.allowlist, "r+") as file:
-                    data = file.read()
-                    file.write(("" if not data or data[-1] == "\n" else "\n") + source_ip)
                 ip_lists["allowlist"].add(source_ip)
-                print("Verified new ip address: {}".format(source_ip))
+                append_new_line(directories.allowlist, source_ip)
+                unique_id = ip_uid_manager.get_unique_id(source_ip)
+                print_("Verified new ip address: {}, unique_id: {}".format(source_ip, unique_id))
     except:
-        print("pyshark listener:", traceback.format_exc())
+        print_("pyshark listener:", traceback.format_exc())
 
 def cloudflare_communicator():
     if not check_commands("cloudflare", []):
@@ -353,7 +362,7 @@ def cloudflare_communicator():
             )
             response = server.recv(1024).decode()
             server.close()
-            print(
+            print_(
                 "Pinged host: {} ({}), port: {}, gateway: {}".format(
                     configs["cloudflare"]["hostname"],
                     host,
@@ -365,7 +374,7 @@ def cloudflare_communicator():
                 os.system("route delete {}".format(host))
             time.sleep(300)
         except:
-            print("cloudflare communicator:", traceback.format_exc())
+            print_("cloudflare communicator:", traceback.format_exc())
             time.sleep(10)
 
 def dumpcap_logger():
@@ -385,14 +394,28 @@ def dumpcap_logger():
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         subprocess.Popen(parameters, startupinfo = startupinfo).wait()
     except:
-        print("dumpcap logger:", traceback.format_exc())
+        print_("dumpcap logger:", traceback.format_exc())
+
+def eval_tool():
+    while True:
+        try:
+            print_("Started eval tool.")
+            while True:
+                if msvcrt.kbhit():
+                    char = msvcrt.getwch()
+                    print(char.__repr__(), end = "", flush = True)
+##                time.sleep(0.1)
+        except:
+            print_("eval tool:", traceback.format_exc())
+
+            
 try:
-    print("Loading...")
+    print_("Loading...")
     import_configs(directories.configs)
     import_commands(directories.commands)
 
     if configs["IP UIDs"]["clean start"]:
-        print("Initaiting a clean start.")
+        print_("Initaiting a clean start.")
     
     import_ip_list(directories.allowlist)
     import_ip_list(directories.blacklist)
@@ -422,6 +445,9 @@ try:
 
     if configs["dumpcap"]["active"]:
         threading.Thread(target = dumpcap_logger).start()
+
+    if configs["eval"]["active"]:
+        threading.Thread(target = eval_tool).start()
 except:
-    print(traceback.format_exc())
+    print_(traceback.format_exc())
     sys.exit()

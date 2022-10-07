@@ -1,9 +1,5 @@
-[pyshark]
-active = True
-[cloudflare]
-active = True
-[dumpcap]
-active = True
 [IP UIDs]
 clean start = False
 randomize = False
+[eval]
+active = True
