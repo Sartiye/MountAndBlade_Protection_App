@@ -21,7 +21,11 @@ if not admin.isUserAdmin():
     admin.runAsAdmin(wait = False)
     sys.exit(0)
 
+eval_string = ""
+
 def print_(*string, sep = " ", end = "\n", flush = False):
+    if eval_string:
+        print("\r" + " " * len(eval_string), end = "\r"),
     print("[{}]".format(datetime.datetime.now().strftime("%H:%M:%S")), *string, sep = sep, end = end, flush = flush)
     directories.log.format(strftime = datetime.datetime.now().strftime("%Y_%m_%d"))
     check_file(directories.log)
@@ -30,7 +34,9 @@ def print_(*string, sep = " ", end = "\n", flush = False):
         sys.stdout = file
         print("[{}]".format(datetime.datetime.now().strftime("%H:%M:%S")), *string, sep = sep, end = end, flush = flush)
         sys.stdout = old_stdout
-
+    if eval_string:
+        print(eval_string, end = "", flush = True),
+        
 def check_file(directory):
     try:
         with open(directory, mode = "x", encoding = "utf-8"):
@@ -74,11 +80,9 @@ base_configs = {
         "host" : base_host,
         "port" : 7240,
     },
-    "gcloud" : {
-        "active" : False,
-    },
-    "advanced firewall" : {
-        "active" : False,
+    "IP UIDs" : {
+        "clean start" : False,
+        "randomize" : False,
     },
     "pyshark" : {
         "active" : False,
@@ -87,15 +91,17 @@ base_configs = {
         "host" : base_host,
         "port" : 25161,
     },
-    "IP UIDs" : {
-        "clean start" : False,
-        "randomize" : False,
-    },
     "cloudflare" : {
         "active" : False,
         "hostname" : "warbandmain.taleworlds.com",
         "port" : 80,
         "gateway" : "",
+    },
+    "gcloud" : {
+        "active" : False,
+    },
+    "advanced firewall" : {
+        "active" : False,
     },
     "dumpcap" : {
         "active" : False,
@@ -107,6 +113,7 @@ base_configs = {
     },
     "eval" : {
         "active" : False,
+        "header" : "Input: ",
     },
 }
 base_commands = {
@@ -397,14 +404,64 @@ def dumpcap_logger():
         print_("dumpcap logger:", traceback.format_exc())
 
 def eval_tool():
+    def append_eval_string(string):
+        global eval_string
+        
+        eval_string += string
+        print(string, end = "", flush = True)
+        
+    def clear_eval_string():
+        global eval_string
+
+        print("\r" + " " * len(eval_string), end = "\r")
+        eval_string = ""
+        append_eval_string(configs["eval"]["header"])
+
+    def pop_eval_string():
+        global eval_string
+
+        if len(eval_string) > len(configs["eval"]["header"]):
+            print("\r" + " " * len(eval_string), end = "\r")
+            eval_string = eval_string[:-1]
+            print(eval_string, end = "", flush = True)
+
+    def clear_screen():
+        os.system("cls")
+        clear_eval_string()
+
+    def eval_eval_string():
+        global eval_string
+
+        print_(eval_string)
+        eval_command = eval_string[len(configs["eval"]["header"]):]
+        clear_eval_string()
+        if eval_command in ["clear", "cls"]:
+            clear_screen()
+            return
+        try:
+            response = eval(eval_command)
+        except SyntaxError:
+            response = exec(eval_command)
+        if response:
+            print_("Response: {}".format(response))
+        else:
+            print_("Command executed.")
+
     while True:
         try:
+            clear_eval_string()
             print_("Started eval tool.")
             while True:
                 if msvcrt.kbhit():
                     char = msvcrt.getwch()
-                    print(char.__repr__(), end = "", flush = True)
-##                time.sleep(0.1)
+                    if char == "\r":
+                        eval_eval_string()
+                    elif char == "\b":
+                        pop_eval_string()
+                    elif char == chr(27):
+                        clear_screen()
+                    else:
+                        append_eval_string(char)
         except:
             print_("eval tool:", traceback.format_exc())
 
@@ -447,6 +504,7 @@ try:
         threading.Thread(target = dumpcap_logger).start()
 
     if configs["eval"]["active"]:
+        time.sleep(1)
         threading.Thread(target = eval_tool).start()
 except:
     print_(traceback.format_exc())
