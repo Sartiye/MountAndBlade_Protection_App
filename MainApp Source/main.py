@@ -61,16 +61,17 @@ def import_error(directory, object_name, line, exception):
     print_("While importing \"{}\", the {} at line {} gave an error: ({}).".format(directory.basename(), object_name, line, exception))
 
 def check_commands(category, not_necessary_commands):
+    defined = True
     for key, command in commands[category].items():
         if not command and not key in not_necessary_commands:
             print_("Warning! You need the command [{0}.{1}] defined in order to activate {0}.".format(category, key))
-            return False
-    return True
+            defined = False
+    return defined
 
 def get_random_string(length):
     random_list = []
     for i in range(length):
-        random_list.append(random.choice(string_lib.ascii_letters + string_lib.digits))
+        random_list.append(random.choice(string_lib.ascii_lowercase + string_lib.digits))
     return "".join(random_list)
 
 base_host = socket.gethostbyname(socket.gethostname())
@@ -84,6 +85,16 @@ base_configs = {
         "clean start" : False,
         "randomize" : False,
     },
+    "google cloud" : {
+        "active" : False,
+        "project" : "",
+        "header" : "warband",
+        "priority" : 1000,
+        "network" : "",
+    },
+    "advanced firewall" : {
+        "active" : False,
+    },
     "pyshark" : {
         "active" : False,
         "interface" : "Ethernet",
@@ -96,12 +107,6 @@ base_configs = {
         "hostname" : "warbandmain.taleworlds.com",
         "port" : 80,
         "gateway" : "",
-    },
-    "gcloud" : {
-        "active" : False,
-    },
-    "advanced firewall" : {
-        "active" : False,
     },
     "dumpcap" : {
         "active" : False,
@@ -117,6 +122,11 @@ base_configs = {
     },
 }
 base_commands = {
+    "google cloud" : {
+        "list" : "",
+        "create" : "",
+        "delete" : "",
+    },
     "cloudflare" : {
         "ping" : "",
         "confirm ping" : "",
@@ -129,6 +139,7 @@ base_commands = {
 ip_lists = {"allowlist": set(), "blacklist": set()}
 configs = base_configs.copy()
 commands = base_commands.copy()
+rule_list = list()
 
 def import_configs(directory):
     global configs
@@ -293,6 +304,41 @@ class Event_Handler(FileSystemEventHandler):
                 rule_updater.update = True
                 break
 
+class Rule():
+    def __init__(self):
+        self.defined = False
+
+    def list(self):
+        return list()
+
+    def create(self, unique_id):
+        pass
+
+    def delete(self, unique_id):
+        pass
+
+class Google_Cloud(Rule):
+    def __init__(self):
+        self.defined = True
+        if not check_commands("google cloud", []):
+            self.defined = False
+        for config in ["project", "network"]:
+            if not configs["google cloud"][config]:
+                print_("Warning! You need the config \"{}\" defined in order to activate google cloud.".format(config))
+                self.defined = False
+
+    def list(self):
+        kwargs = {
+            "project" : configs["google cloud"]["project"],
+            "header" : configs["google cloud"]["header"],
+        }
+        rules = [str(rule).split(" ")[0] for rule in os.popen(commands["google cloud"]["list"].format(**kwargs)).read().split("\n")][1:-1]
+        print(rules)
+        return rules
+
+class Advanced_Firewall(Rule):
+    pass
+
 class Rule_Updater(threading.Thread):
     def __init__(self, *args, **kwargs):
         threading.Thread.__init__(self, *args, **kwargs)
@@ -313,6 +359,8 @@ class Rule_Updater(threading.Thread):
             print_("Updating IP List rules...")
             ip_list_to_remove = self.ip_list.difference(new_ip_list)
             self.ip_list = new_ip_list
+            for rule in rule_list:
+                rule.list()
             configs["IP UIDs"]["clean start"] = False
             print_("Done!")
 
@@ -432,12 +480,12 @@ def eval_tool():
     def eval_eval_string():
         global eval_string
 
-        print_(eval_string)
         eval_command = eval_string[len(configs["eval"]["header"]):]
-        clear_eval_string()
         if eval_command in ["clear", "cls"]:
             clear_screen()
             return
+        print_(eval_string)
+        clear_eval_string()
         try:
             response = eval(eval_command)
         except SyntaxError:
@@ -486,12 +534,15 @@ try:
     observer.schedule(Event_Handler(), directories.data.string())
     observer.start()
 
-    rule_updater = Rule_Updater()
-    rule_updater.update = True
-    rule_updater.force = True
-    rule_updater.start()
+    if configs["google cloud"]["active"]:
+        rule = Google_Cloud()
+        if rule.defined:
+            rule_list.append(rule)
 
-    time.sleep(1)
+    if configs["advanced firewall"]["active"]:
+        rule = Advanced_Firewall()
+        if rule.defined:
+            rule_list.append(rule)
 
     if configs["pyshark"]["active"]:
         threading.Thread(target = pyshark_listener).start()
@@ -502,6 +553,14 @@ try:
 
     if configs["dumpcap"]["active"]:
         threading.Thread(target = dumpcap_logger).start()
+        time.sleep(1)
+
+    rule_updater = Rule_Updater()
+    rule_updater.update = True
+    rule_updater.force = True
+    rule_updater.start()
+
+    time.sleep(1)
 
     if configs["eval"]["active"]:
         time.sleep(1)

@@ -1,3 +1,9 @@
+[google cloud.list]
+gcloud compute --project={project} firewall-rules list --filter="name~'{header}-.*'"
+[google cloud.create]
+gcloud compute --project={project} firewall-rules create {header}-{unique_id} --direction=INGRESS --priority={priority} --network={network} --action=ALLOW --rules=udp:{port} --source-ranges={ip_address}
+[google cloud.delete]
+gcloud compute --project={project} firewall-rules delete {header}-{unique_id}
 [cloudflare.ping]
 GET /handlerservers.ashx?type=ping&keys&port={port}&hidden=false HTTP/1.1\r\n
 Connection: Keep-Alive\r\n
