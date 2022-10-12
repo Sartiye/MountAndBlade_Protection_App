@@ -311,11 +311,11 @@ class Rule():
     def list(self):
         return list()
 
-    def create(self, unique_id):
-        pass
+    def create(self, unique_id, ip_address):
+        print_("Created unique_id: {}, ip address: {}".format(unique_id, ip_address))
 
     def delete(self, unique_id):
-        pass
+        print_("Deleted unique_id: {}".format(unique_id))
 
 class Google_Cloud(Rule):
     def __init__(self):
@@ -333,8 +333,34 @@ class Google_Cloud(Rule):
             "header" : configs["google cloud"]["header"],
         }
         rules = [str(rule).split(" ")[0] for rule in os.popen(commands["google cloud"]["list"].format(**kwargs)).read().split("\n")][1:-1]
-        print(rules)
+        rules = [rule.split("-")[1] for rule in rules]
         return rules
+
+    def create(self, unique_id, ip_address):
+        kwargs = {
+            "project" : configs["google cloud"]["project"],
+            "header" : configs["google cloud"]["header"],
+            "unique_id" : unique_id,
+            "priority" : configs["google cloud"]["priority"],
+            "network" : configs["google cloud"]["network"],
+            "port" : configs["warband"]["port"],
+            "ip_address" : ip_address,
+        }
+        subprocess.Popen(commands["google cloud"]["create"].format(**kwargs), shell = True, creationflags=subprocess.CREATE_NEW_CONSOLE)
+
+    def delete(self, unique_id):
+        kwargs = {
+            "project" : configs["google cloud"]["project"],
+            "header" : configs["google cloud"]["header"],
+            "unique_id" : unique_id,
+        }
+        subprocess.Popen(
+            commands["google cloud"]["delete"].format(**kwargs),
+            shell = True,
+            creationflags=subprocess.CREATE_NEW_CONSOLE,
+            stdin = subprocess.PIPE,
+            stdout = subprocess.PIPE,
+        ).communicate("Y".encode())
 
 class Advanced_Firewall(Rule):
     pass
@@ -348,21 +374,43 @@ class Rule_Updater(threading.Thread):
         self.ip_list = set()
 
     def run(self):
-        while True:
-            if not self.update:
-                time.sleep(1); continue
-            self.update = False
-            new_ip_list = ip_lists["allowlist"].difference(ip_lists["blacklist"])
-            if not self.force and self.ip_list == new_ip_list:
-                time.sleep(1); continue
-            self.force = False
-            print_("Updating IP List rules...")
-            ip_list_to_remove = self.ip_list.difference(new_ip_list)
-            self.ip_list = new_ip_list
+        def list_rules():
+            unique_ids = list()
             for rule in rule_list:
-                rule.list()
-            configs["IP UIDs"]["clean start"] = False
-            print_("Done!")
+                unique_ids.extend(rule.list())
+            return unique_ids
+        def create_rule(unique_id, ip_address):
+            for rule in rule_list:
+                rule.create(unique_id, ip_address)
+        def delete_rule(unique_id):
+            for rule in rule_list:
+                rule.delete(unique_id)
+        while True:
+            try:
+                if not self.update:
+                    time.sleep(1); continue
+                self.update = False
+                new_ip_list = ip_lists["allowlist"].difference(ip_lists["blacklist"])
+                if not self.force and self.ip_list == new_ip_list:
+                    time.sleep(1); continue
+                self.force = False
+                print_("Updating IP List rules...")
+                self.ip_list = new_ip_list
+                new_unique_ids = [ip_uid_manager.get_unique_id(ip_address) for ip_address in self.ip_list]
+                unique_ids = list_rules()
+                for unique_id in unique_ids:
+                    if not unique_id in new_unique_ids:
+                        delete_rule(unique_id)
+                for ip_address in self.ip_list:
+                    unique_id = ip_uid_manager.get_unique_id(ip_address)
+                    if not unique_id in unique_ids:
+                        create_rule(unique_id, ip_address)
+                configs["IP UIDs"]["clean start"] = False
+                print_("Done!")
+            except:
+                print_("rule updater:", traceback.format_exc())
+                self.update = True
+                time.sleep(10)
 
 def pyshark_listener():
     try:
@@ -530,10 +578,6 @@ try:
     ip_uid_manager = IP_UID_Manager(directories.ip_uids)
     ip_uid_manager.import_directory()
 
-    observer = Observer()
-    observer.schedule(Event_Handler(), directories.data.string())
-    observer.start()
-
     if configs["google cloud"]["active"]:
         rule = Google_Cloud()
         if rule.defined:
@@ -559,6 +603,10 @@ try:
     rule_updater.update = True
     rule_updater.force = True
     rule_updater.start()
+
+    observer = Observer()
+    observer.schedule(Event_Handler(), directories.data.string())
+    observer.start()
 
     time.sleep(1)
 
