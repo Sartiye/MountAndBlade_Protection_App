@@ -1,5 +1,0 @@
-[IP UIDs]
-clean start = False
-randomize = False
-[eval]
-active = True

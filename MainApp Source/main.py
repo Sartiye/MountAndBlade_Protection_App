@@ -22,10 +22,11 @@ if not admin.isUserAdmin():
     sys.exit(0)
 
 eval_string = ""
+file_call = False
 
 def print_(*string, sep = " ", end = "\n", flush = False):
     if eval_string:
-        print("\r" + " " * len(eval_string), end = "\r"),
+        print("\r" + " " * len(eval_string) + "\r", end = ""),
     print("[{}]".format(datetime.datetime.now().strftime("%H:%M:%S")), *string, sep = sep, end = end, flush = flush)
     directories.log.format(strftime = datetime.datetime.now().strftime("%Y_%m_%d"))
     check_file(directories.log)
@@ -298,9 +299,14 @@ class Event_Handler(FileSystemEventHandler):
     def __init__(self):
         FileSystemEventHandler.__init__(self)
     def on_modified(self, event):
+        global file_call
+        
         for directory in [directories.allowlist, directories.blacklist]:
             if event.src_path == directory.string():
                 import_ip_list(directory)
+                if not file_call:
+                    print_("Data change detected on file: {}".format(directory.basename()))
+                file_call = False
                 rule_updater.update = True
                 break
 
@@ -312,10 +318,10 @@ class Rule():
         return list()
 
     def create(self, unique_id, ip_address):
-        print_("Created unique_id: {}, ip address: {}".format(unique_id, ip_address))
+        print_("Created rule with unique_id: {}, ip address: {}".format(unique_id, ip_address))
 
     def delete(self, unique_id):
-        print_("Deleted unique_id: {}".format(unique_id))
+        print_("Deleted rule with unique_id: {}".format(unique_id))
 
 class Google_Cloud(Rule):
     def __init__(self):
@@ -332,7 +338,11 @@ class Google_Cloud(Rule):
             "project" : configs["google cloud"]["project"],
             "header" : configs["google cloud"]["header"],
         }
-        rules = [str(rule).split(" ")[0] for rule in os.popen(commands["google cloud"]["list"].format(**kwargs)).read().split("\n")][1:-1]
+        rules = [str(rule).split(" ")[0] for rule in subprocess.check_output(
+            commands["google cloud"]["list"].format(**kwargs),
+            shell = True,
+            stderr = subprocess.PIPE,
+        ).decode().split("\n")][1:-1]
         rules = [rule.split("-")[1] for rule in rules]
         return rules
 
@@ -346,7 +356,13 @@ class Google_Cloud(Rule):
             "port" : configs["warband"]["port"],
             "ip_address" : ip_address,
         }
-        subprocess.Popen(commands["google cloud"]["create"].format(**kwargs), shell = True, creationflags=subprocess.CREATE_NEW_CONSOLE)
+        subprocess.check_call(
+            commands["google cloud"]["create"].format(**kwargs),
+            shell = True,
+            stdout = subprocess.PIPE,
+            stderr = subprocess.PIPE,
+        )
+        print_("Created rule with ip address: {}, unique id: {}".format(ip_address, unique_id))
 
     def delete(self, unique_id):
         kwargs = {
@@ -357,10 +373,11 @@ class Google_Cloud(Rule):
         subprocess.Popen(
             commands["google cloud"]["delete"].format(**kwargs),
             shell = True,
-            creationflags=subprocess.CREATE_NEW_CONSOLE,
             stdin = subprocess.PIPE,
             stdout = subprocess.PIPE,
+            stderr = subprocess.PIPE,
         ).communicate("Y".encode())
+        print_("Deleted rule with unique_id: {}".format(unique_id))
 
 class Advanced_Firewall(Rule):
     pass
@@ -393,8 +410,8 @@ class Rule_Updater(threading.Thread):
                 new_ip_list = ip_lists["allowlist"].difference(ip_lists["blacklist"])
                 if not self.force and self.ip_list == new_ip_list:
                     time.sleep(1); continue
+                print_("Updating IP List rules{}...".format(" (force: True)" if self.force else ""))
                 self.force = False
-                print_("Updating IP List rules...")
                 self.ip_list = new_ip_list
                 new_unique_ids = [ip_uid_manager.get_unique_id(ip_address) for ip_address in self.ip_list]
                 unique_ids = list_rules()
@@ -413,6 +430,7 @@ class Rule_Updater(threading.Thread):
                 time.sleep(10)
 
 def pyshark_listener():
+    global file_call
     try:
         capture = pyshark.LiveCapture(
             configs["pyshark"]["interface"],
@@ -433,6 +451,7 @@ def pyshark_listener():
             if source_ip == configs["pyshark"]["host"]: continue
             if not source_ip in ip_lists["allowlist"]:
                 ip_lists["allowlist"].add(source_ip)
+                file_call = True
                 append_new_line(directories.allowlist, source_ip)
                 unique_id = ip_uid_manager.get_unique_id(source_ip)
                 print_("Verified new ip address: {}, unique_id: {}".format(source_ip, unique_id))
@@ -444,9 +463,14 @@ def cloudflare_communicator():
         return
     while True:
         try:
+            route = bool(configs["cloudflare"]["gateway"])
             host = socket.gethostbyname(configs["cloudflare"]["hostname"])
-            if configs["cloudflare"]["gateway"]:
-                os.system("route add {} {}".format(host, configs["cloudflare"]["gateway"]))
+            if route:
+                subprocess.check_call(
+                    "route add {} {}".format(host, configs["cloudflare"]["gateway"]),
+                    shell = True,
+                    stdout = subprocess.PIPE,
+                )
             server = socket.create_connection((host, configs["cloudflare"]["port"]))
             server.send(
                 commands["cloudflare"]["ping"].format(
@@ -470,11 +494,15 @@ def cloudflare_communicator():
                     configs["cloudflare"]["hostname"],
                     host,
                     configs["pyshark"]["port"],
-                    configs["cloudflare"]["gateway"] if configs["cloudflare"]["gateway"] else "On-link",
+                    configs["cloudflare"]["gateway"] if route else "On-link",
                 )
             )
-            if configs["cloudflare"]["gateway"]:
-                os.system("route delete {}".format(host))
+            if route:
+                subprocess.check_call(
+                    "route delete {}".format(host),
+                    shell = True,
+                    stdout = subprocess.PIPE,
+                )
             time.sleep(300)
         except:
             print_("cloudflare communicator:", traceback.format_exc())
@@ -509,7 +537,7 @@ def eval_tool():
     def clear_eval_string():
         global eval_string
 
-        print("\r" + " " * len(eval_string), end = "\r")
+        print("\r" + " " * len(eval_string) + "\r", end = "")
         eval_string = ""
         append_eval_string(configs["eval"]["header"])
 
@@ -517,7 +545,7 @@ def eval_tool():
         global eval_string
 
         if len(eval_string) > len(configs["eval"]["header"]):
-            print("\r" + " " * len(eval_string), end = "\r")
+            print("\r" + " " * len(eval_string) + "\r", end = "")
             eval_string = eval_string[:-1]
             print(eval_string, end = "", flush = True)
 
@@ -615,4 +643,4 @@ try:
         threading.Thread(target = eval_tool).start()
 except:
     print_(traceback.format_exc())
-    sys.exit()
+    input()
