@@ -85,15 +85,15 @@ base_configs = {
         "clean start" : False,
         "randomize" : False,
     },
+    "advanced firewall" : {
+        "active" : False,
+    },
     "google cloud" : {
         "active" : False,
         "project" : "",
         "header" : "warband",
         "priority" : 1000,
         "network" : "",
-    },
-    "advanced firewall" : {
-        "active" : False,
     },
     "pyshark" : {
         "active" : False,
@@ -578,13 +578,13 @@ try:
     ip_uid_manager = IP_UID_Manager(directories.ip_uids)
     ip_uid_manager.import_directory()
 
-    if configs["google cloud"]["active"]:
-        rule = Google_Cloud()
+    if configs["advanced firewall"]["active"]:
+        rule = Advanced_Firewall()
         if rule.defined:
             rule_list.append(rule)
 
-    if configs["advanced firewall"]["active"]:
-        rule = Advanced_Firewall()
+    if configs["google cloud"]["active"]:
+        rule = Google_Cloud()
         if rule.defined:
             rule_list.append(rule)
 
