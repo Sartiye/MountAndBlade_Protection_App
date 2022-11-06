@@ -8,6 +8,15 @@ gcloud compute --project={project} firewall-rules create {header}-{unique_id} --
 [google cloud.delete]
 gcloud compute --project={project} firewall-rules delete {header}-{unique_id}
 
+[advanced firewall.list]
+powershell "Get-NetFirewallPortFilter -Protocol UDP | Where {{ $_.localport -eq '{port}' }} | Get-NetFirewallRule | select DisplayName"
+
+[advanced firewall.create]
+netsh advfirewall firewall add rule name={header}-{unique_id} dir=in action=allow protocol=udp localport={port} remoteip={ip_address}
+
+[advanced firewall.delete]
+netsh advfirewall firewall delete rule name={header}-{unique_id}
+
 [\]
 
 [cloudflare.ping]

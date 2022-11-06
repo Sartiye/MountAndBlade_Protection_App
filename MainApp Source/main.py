@@ -86,15 +86,16 @@ base_configs = {
         "clean start" : False,
         "randomize" : False,
     },
-    "advanced firewall" : {
-        "active" : False,
-    },
     "google cloud" : {
         "active" : False,
         "project" : "",
         "header" : "warband",
         "priority" : 1000,
         "network" : "",
+    },
+    "advanced firewall" : {
+        "active" : False,
+        "header" : "warband",
     },
     "pyshark" : {
         "active" : False,
@@ -124,6 +125,11 @@ base_configs = {
 }
 base_commands = {
     "google cloud" : {
+        "list" : "",
+        "create" : "",
+        "delete" : "",
+    },
+    "advanced firewall" : {
         "list" : "",
         "create" : "",
         "delete" : "",
@@ -380,7 +386,50 @@ class Google_Cloud(Rule):
         print_("Deleted rule with unique_id: {}".format(unique_id))
 
 class Advanced_Firewall(Rule):
-    pass
+    def __init__(self):
+        self.defined = True
+        if not check_commands("advanced firewall", []):
+            self.defined = False
+
+    def list(self):
+        kwargs = {
+            "port" : configs["warband"]["port"],
+        }
+        rules = [rule.strip().split("-")[1] for rule in subprocess.check_output(
+            commands["advanced firewall"]["list"].format(**kwargs),
+            shell = True,
+            stderr = subprocess.PIPE,
+        ).decode().split("\r\n")[3:-3]]
+        return rules
+
+    def create(self, unique_id, ip_address):
+        kwargs = {
+            "header" : configs["advanced firewall"]["header"],
+            "unique_id" : unique_id,
+            "port" : configs["warband"]["port"],
+            "ip_address" : ip_address,
+        }
+        subprocess.check_call(
+            commands["advanced firewall"]["create"].format(**kwargs),
+            shell = True,
+            stdout = subprocess.PIPE,
+            stderr = subprocess.PIPE,
+        )
+        print_("Created rule with ip address: {}, unique id: {}".format(ip_address, unique_id))
+
+    def delete(self, unique_id):
+        kwargs = {
+            "header" : configs["advanced firewall"]["header"],
+            "unique_id" : unique_id,
+        }
+        subprocess.check_call(
+            commands["advanced firewall"]["delete"].format(**kwargs),
+            shell = True,
+            stdin = subprocess.PIPE,
+            stdout = subprocess.PIPE,
+            stderr = subprocess.PIPE,
+        )
+        print_("Deleted rule with unique_id: {}".format(unique_id))
 
 class Rule_Updater(threading.Thread):
     def __init__(self, *args, **kwargs):
@@ -432,6 +481,8 @@ class Rule_Updater(threading.Thread):
 def pyshark_listener():
     global file_call
     try:
+        while configs["IP UIDs"]["clean start"]:
+            time.sleep(1)
         capture = pyshark.LiveCapture(
             configs["pyshark"]["interface"],
             bpf_filter = configs["pyshark"]["filter"].format(
