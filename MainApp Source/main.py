@@ -85,6 +85,7 @@ base_configs = {
     "IP UIDs" : {
         "clean start" : False,
         "randomize" : False,
+        "always list" : False,
     },
     "google cloud" : {
         "active" : False,
@@ -117,6 +118,7 @@ base_configs = {
         "printname" : "stdout",
         "filename" : "mycap",
         "filter" : "host {host} && port {port}",
+        "show stdout" : False,
     },
     "eval" : {
         "active" : False,
@@ -425,7 +427,6 @@ class Advanced_Firewall(Rule):
         subprocess.check_call(
             commands["advanced firewall"]["delete"].format(**kwargs),
             shell = True,
-            stdin = subprocess.PIPE,
             stdout = subprocess.PIPE,
             stderr = subprocess.PIPE,
         )
@@ -438,13 +439,13 @@ class Rule_Updater(threading.Thread):
         self.update = False
         self.force = False
         self.ip_list = set()
+        self.unique_ids = list()
 
     def run(self):
         def list_rules():
-            unique_ids = list()
-            for rule in rule_list:
-                unique_ids.extend(rule.list())
-            return unique_ids
+            self.unique_ids.clear()
+            self.unique_ids.extend(rule_list[0].list())
+            return self.unique_ids
         def create_rule(unique_id, ip_address):
             for rule in rule_list:
                 rule.create(unique_id, ip_address)
@@ -460,17 +461,20 @@ class Rule_Updater(threading.Thread):
                 if not self.force and self.ip_list == new_ip_list:
                     time.sleep(1); continue
                 print_("Updating IP List rules{}...".format(" (force: True)" if self.force else ""))
-                self.force = False
                 self.ip_list = new_ip_list
                 new_unique_ids = [ip_uid_manager.get_unique_id(ip_address) for ip_address in self.ip_list]
-                unique_ids = list_rules()
-                for unique_id in unique_ids:
+                if configs["IP UIDs"]["always list"] or self.force:
+                    list_rules()
+                self.force = False
+                for unique_id in self.unique_ids:
                     if not unique_id in new_unique_ids:
                         delete_rule(unique_id)
+                        self.unique_ids.remove(unique_id)
                 for ip_address in self.ip_list:
                     unique_id = ip_uid_manager.get_unique_id(ip_address)
-                    if not unique_id in unique_ids:
+                    if not unique_id in self.unique_ids:
                         create_rule(unique_id, ip_address)
+                        self.unique_ids.append(unique_id)
                 configs["IP UIDs"]["clean start"] = False
                 print_("Done!")
             except:
@@ -563,18 +567,24 @@ def dumpcap_logger():
     if not check_commands("dumpcap", []):
         return
     try:
-        kwargs = {
-            "application" : configs["dumpcap"]["application"],
-            "filesize" : configs["dumpcap"]["filesize"],
-            "printname" : configs["dumpcap"]["printname"],
-            "write" : directories.pcap.format(filename = configs["dumpcap"]["filename"]),
-            "interface" : configs["warband"]["interface"],
-            "filter" : configs["dumpcap"]["filter"].format(host = configs["warband"]["host"], port = configs["warband"]["port"]),
-        }
-        parameters = [parameter.format(**kwargs) for parameter in commands["dumpcap"]["command"].split(" ")]
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        subprocess.Popen(parameters, startupinfo = startupinfo).wait()
+        while True:
+            kwargs = {
+                "application" : configs["dumpcap"]["application"],
+                "filesize" : configs["dumpcap"]["filesize"],
+                "printname" : configs["dumpcap"]["printname"],
+                "write" : directories.pcap.format(filename = configs["dumpcap"]["filename"]),
+                "interface" : configs["warband"]["interface"],
+                "filter" : configs["dumpcap"]["filter"].format(host = configs["warband"]["host"], port = configs["warband"]["port"]),
+            }
+            parameters = [parameter.format(**kwargs) for parameter in commands["dumpcap"]["command"].split(" ")]
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            subprocess.Popen(
+                parameters,
+                startupinfo = startupinfo,
+                stdout = None if configs["dumpcap"]["show stdout"] else subprocess.PIPE,
+                stderr = subprocess.PIPE,
+            ).wait()
     except:
         print_("dumpcap logger:", traceback.format_exc())
 
