@@ -439,19 +439,23 @@ class Rule_Updater(threading.Thread):
         self.update = False
         self.force = False
         self.ip_list = set()
-        self.unique_ids = list()
+        self.unique_ids = set()
+
+    def list_rules(self):
+        self.unique_ids.clear()
+        self.unique_ids.update(rule_list[0].list())
+        
+    def create_rule(self, unique_id, ip_address):
+        for rule in rule_list:
+            rule.create(unique_id, ip_address)
+        self.unique_ids.add(unique_id)
+        
+    def delete_rule(self, unique_id):
+        for rule in rule_list:
+            rule.delete(unique_id)
+        self.unique_ids.remove(unique_id)
 
     def run(self):
-        def list_rules():
-            self.unique_ids.clear()
-            self.unique_ids.extend(rule_list[0].list())
-            return self.unique_ids
-        def create_rule(unique_id, ip_address):
-            for rule in rule_list:
-                rule.create(unique_id, ip_address)
-        def delete_rule(unique_id):
-            for rule in rule_list:
-                rule.delete(unique_id)
         while True:
             try:
                 if not self.update:
@@ -461,25 +465,25 @@ class Rule_Updater(threading.Thread):
                 if not self.force and self.ip_list == new_ip_list:
                     time.sleep(1); continue
                 print_("Updating IP List rules{}...".format(" (force: True)" if self.force else ""))
+                del self.ip_list
                 self.ip_list = new_ip_list
-                new_unique_ids = [ip_uid_manager.get_unique_id(ip_address) for ip_address in self.ip_list]
+                new_unique_ids = set(ip_uid_manager.get_unique_id(ip_address) for ip_address in self.ip_list)
                 if configs["IP UIDs"]["always list"] or self.force:
-                    list_rules()
+                    self.list_rules()
                 self.force = False
                 for unique_id in self.unique_ids:
                     if not unique_id in new_unique_ids:
-                        delete_rule(unique_id)
-                        self.unique_ids.remove(unique_id)
+                        self.delete_rule(unique_id)
                 for ip_address in self.ip_list:
                     unique_id = ip_uid_manager.get_unique_id(ip_address)
                     if not unique_id in self.unique_ids:
-                        create_rule(unique_id, ip_address)
-                        self.unique_ids.append(unique_id)
+                        self.create_rule(unique_id, ip_address)
                 configs["IP UIDs"]["clean start"] = False
                 print_("Done!")
             except:
                 print_("rule updater:", traceback.format_exc())
                 self.update = True
+                self.force = True
                 time.sleep(10)
 
 def pyshark_listener():
