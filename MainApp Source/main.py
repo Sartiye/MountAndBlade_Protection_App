@@ -397,11 +397,14 @@ class Advanced_Firewall(Rule):
         kwargs = {
             "port" : configs["warband"]["port"],
         }
-        rules = [rule.strip().split("-")[1] for rule in subprocess.check_output(
-            commands["advanced firewall"]["list"].format(**kwargs),
-            shell = True,
-            stderr = subprocess.PIPE,
-        ).decode().split("\r\n")[3:-3]]
+        try:
+            rules = [rule.strip().split("-")[1] for rule in subprocess.check_output(
+                commands["advanced firewall"]["list"].format(**kwargs),
+                shell = True,
+                stderr = subprocess.PIPE,
+            ).decode().split("\r\n")[:-1]]
+        except subprocess.CalledProcessError:
+            return []
         return rules
 
     def create(self, unique_id, ip_address):
@@ -471,7 +474,8 @@ class Rule_Updater(threading.Thread):
                 if configs["IP UIDs"]["always list"] or self.force:
                     self.list_rules()
                 self.force = False
-                for unique_id in self.unique_ids:
+                old_unique_ids = self.unique_ids.copy()
+                for unique_id in old_unique_ids:
                     if not unique_id in new_unique_ids:
                         self.delete_rule(unique_id)
                 for ip_address in self.ip_list:
