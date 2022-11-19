@@ -146,6 +146,7 @@ base_commands = {
 }
 
 ip_lists = {"allowlist": set(), "blacklist": set()}
+ip_lists_lock = threading.Lock()
 configs = base_configs.copy()
 commands = base_commands.copy()
 rule_list = list()
@@ -183,6 +184,7 @@ def import_configs(directory):
             configs[category][config] = value
         else:
             import_error(directory, "config", i, "A category must be defined.")
+
 
 def import_commands(directory):
     global commands
@@ -225,28 +227,31 @@ def import_commands(directory):
         else:
             import_error(directory, "command", i, "A command must be defined.")
 
+
 def import_ip_list(directory):
-    ip_list = ip_lists[directory.key]
-    ip_list.clear()
-    check_file(directory)
-    with open(directory, mode = "r", encoding = "utf-8") as file:
-        data = file.read()
-    if not data:
-        return
-    if configs["IP UIDs"]["clean start"]:
-        clean_file(directory)
-        return
-    ip_addresses = data.split("\n")
-    for i, ip_address in enumerate(ip_addresses, start = 1):
-        ip_address = ip_address.split("#")[0].strip(" ").strip("\t")
-        if not ip_address:
-            continue
-        try:
-            ipaddress.IPv4Network(ip_address, strict = False)
-        except (ipaddress.AddressValueError, ipaddress.NetmaskValueError) as exception:
-            import_error(directory, "ip address", i, exception)
-            continue
-        ip_list.add(ip_address)
+    with ip_lists_lock:
+        ip_list = ip_lists[directory.key]
+        ip_list.clear()
+        check_file(directory)
+        with open(directory, mode = "r", encoding = "utf-8") as file:
+            data = file.read()
+        if not data:
+            return
+        if configs["IP UIDs"]["clean start"]:
+            clean_file(directory)
+            return
+        ip_addresses = data.split("\n")
+        for i, ip_address in enumerate(ip_addresses, start = 1):
+            ip_address = ip_address.split("#")[0].strip(" ").strip("\t")
+            if not ip_address:
+                continue
+            try:
+                ipaddress.IPv4Network(ip_address, strict = False)
+            except (ipaddress.AddressValueError, ipaddress.NetmaskValueError) as exception:
+                import_error(directory, "ip address", i, exception)
+                continue
+            ip_list.add(ip_address)
+
 
 class IP_UID_Manager():
     def __init__(self, directory):
@@ -303,9 +308,11 @@ class IP_UID_Manager():
         append_new_line(directories.ip_uids, "{} : {}".format(ip_address, unique_id))
         return unique_id
 
+#
 class Event_Handler(FileSystemEventHandler):
     def __init__(self):
         FileSystemEventHandler.__init__(self)
+        
     def on_modified(self, event):
         global file_call
         
@@ -317,6 +324,7 @@ class Event_Handler(FileSystemEventHandler):
                 file_call = False
                 rule_updater.update = True
                 break
+
 
 class Rule():
     def __init__(self):
@@ -330,6 +338,7 @@ class Rule():
 
     def delete(self, unique_id):
         print_("Deleted rule with unique_id: {}".format(unique_id))
+
 
 class Google_Cloud(Rule):
     def __init__(self):
@@ -387,6 +396,7 @@ class Google_Cloud(Rule):
         ).communicate("Y".encode())
         print_("Deleted rule with unique_id: {}".format(unique_id))
 
+
 class Advanced_Firewall(Rule):
     def __init__(self):
         self.defined = True
@@ -435,6 +445,7 @@ class Advanced_Firewall(Rule):
         )
         print_("Deleted rule with unique_id: {}".format(unique_id))
 
+
 class Rule_Updater(threading.Thread):
     def __init__(self, *args, **kwargs):
         threading.Thread.__init__(self, *args, **kwargs)
@@ -464,20 +475,26 @@ class Rule_Updater(threading.Thread):
                 if not self.update:
                     time.sleep(1); continue
                 self.update = False
-                new_ip_list = ip_lists["allowlist"].difference(ip_lists["blacklist"])
+
+                with ip_lists_lock:
+                    new_ip_list = ip_lists["allowlist"].difference(ip_lists["blacklist"])
+                
                 if not self.force and self.ip_list == new_ip_list:
                     time.sleep(1); continue
                 print_("Updating IP List rules{}...".format(" (force: True)" if self.force else ""))
-                del self.ip_list
-                self.ip_list = new_ip_list
-                new_unique_ids = set(ip_uid_manager.get_unique_id(ip_address) for ip_address in self.ip_list)
+                
                 if configs["IP UIDs"]["always list"] or self.force:
                     self.list_rules()
                 self.force = False
+                
+                del self.ip_list
+                self.ip_list = new_ip_list
+                new_unique_ids = set(ip_uid_manager.get_unique_id(ip_address) for ip_address in self.ip_list)
                 old_unique_ids = self.unique_ids.copy()
-                for unique_id in old_unique_ids:
-                    if not unique_id in new_unique_ids:
-                        self.delete_rule(unique_id)
+                difference = old_unique_ids.difference(new_unique_ids)
+                print_(difference)
+                for unique_id in difference:
+                    self.delete_rule(unique_id)
                 for ip_address in self.ip_list:
                     unique_id = ip_uid_manager.get_unique_id(ip_address)
                     if not unique_id in self.unique_ids:
@@ -489,6 +506,7 @@ class Rule_Updater(threading.Thread):
                 self.update = True
                 self.force = True
                 time.sleep(10)
+
 
 def pyshark_listener():
     global file_call
