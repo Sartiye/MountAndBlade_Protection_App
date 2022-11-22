@@ -492,7 +492,6 @@ class Rule_Updater(threading.Thread):
                 new_unique_ids = set(ip_uid_manager.get_unique_id(ip_address) for ip_address in self.ip_list)
                 old_unique_ids = self.unique_ids.copy()
                 difference = old_unique_ids.difference(new_unique_ids)
-                print_(difference)
                 for unique_id in difference:
                     self.delete_rule(unique_id)
                 for ip_address in self.ip_list:
