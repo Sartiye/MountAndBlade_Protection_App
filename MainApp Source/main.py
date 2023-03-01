@@ -93,6 +93,7 @@ base_configs = {
         "header" : "warband",
         "priority" : 1000,
         "network" : "",
+        "group rules" : False,
     },
     "advanced firewall" : {
         "active" : False,
@@ -339,6 +340,9 @@ class Rule():
     def delete(self, unique_id):
         print_("Deleted rule with unique_id: {}".format(unique_id))
 
+    def refresh(self, ip_list):
+        pass
+
 
 class Google_Cloud(Rule):
     def __init__(self):
@@ -349,6 +353,9 @@ class Google_Cloud(Rule):
             if not configs["google cloud"][config]:
                 print_("Warning! You need the config \"{}\" defined in order to activate google cloud.".format(config))
                 self.defined = False
+        self.current_header = get_random_string(5)
+        self.current_rule_headers = []
+        self.old_rule_headers = []
 
     def list(self):
         kwargs = {
@@ -363,38 +370,63 @@ class Google_Cloud(Rule):
         rules = [rule.split("-")[1] for rule in rules]
         return rules
 
-    def create(self, unique_id, ip_address):
-        kwargs = {
-            "project" : configs["google cloud"]["project"],
-            "header" : configs["google cloud"]["header"],
-            "unique_id" : unique_id,
-            "priority" : configs["google cloud"]["priority"],
-            "network" : configs["google cloud"]["network"],
-            "port" : configs["warband"]["port"],
-            "ip_address" : ip_address,
-        }
-        subprocess.check_call(
-            commands["google cloud"]["create"].format(**kwargs),
-            shell = True,
-            stdout = subprocess.PIPE,
-            stderr = subprocess.PIPE,
-        )
-        print_("Created rule with ip address: {}, unique id: {}".format(ip_address, unique_id))
+    def create(self, unique_id, ip_address, refresh = False):
+        if (not configs["google cloud"]["group rules"] or refresh):
+            kwargs = {
+                "project" : configs["google cloud"]["project"],
+                "header" : configs["google cloud"]["header"],
+                "unique_id" : unique_id,
+                "priority" : configs["google cloud"]["priority"],
+                "network" : configs["google cloud"]["network"],
+                "port" : configs["warband"]["port"],
+                "ip_address" : ip_address,
+            }
+            subprocess.check_call(
+                commands["google cloud"]["create"].format(**kwargs),
+                shell = True,
+                stdout = subprocess.PIPE,
+                stderr = subprocess.PIPE,
+            )
+            print_("Created rule with ip address: {}, unique id: {}".format(ip_address, unique_id))
 
-    def delete(self, unique_id):
-        kwargs = {
-            "project" : configs["google cloud"]["project"],
-            "header" : configs["google cloud"]["header"],
-            "unique_id" : unique_id,
-        }
-        subprocess.Popen(
-            commands["google cloud"]["delete"].format(**kwargs),
-            shell = True,
-            stdin = subprocess.PIPE,
-            stdout = subprocess.PIPE,
-            stderr = subprocess.PIPE,
-        ).communicate("Y".encode())
-        print_("Deleted rule with unique_id: {}".format(unique_id))
+    def delete(self, unique_id, refresh = False):
+        if (not configs["google cloud"]["group rules"] or refresh):
+            kwargs = {
+                "project" : configs["google cloud"]["project"],
+                "header" : configs["google cloud"]["header"],
+                "unique_id" : unique_id,
+            }
+            subprocess.Popen(
+                commands["google cloud"]["delete"].format(**kwargs),
+                shell = True,
+                stdin = subprocess.PIPE,
+                stdout = subprocess.PIPE,
+                stderr = subprocess.PIPE,
+            ).communicate("Y".encode())
+            print_("Deleted rule with unique_id: {}".format(unique_id))
+
+    def split_ip_list(self, ip_adresses):
+        ip_lists = []
+        while len(ip_adresses) > 256:
+            ip_lists.append(ip_adresses[:256])
+            ip_adresses = ip_adresses[256:]
+        if ip_adresses:
+            ip_lists.append(ip_adresses)
+        return ip_lists
+
+    def refresh(self, ip_list):
+        if (configs["google cloud"]["group rules"]):
+            current_header = get_random_string(5)
+            ip_lists = self.split_ip_list(ip_list)
+            del self.old_rule_headers
+            self.old_rule_headers = self.current_rule_headers.copy()
+            self.current_rule_headers.clear()
+            for i, ip_list in enumerate(ip_lists):
+                header = current_header + "-" + str(i)
+                self.create(header, ",".join(ip_list), refresh = True)
+                self.current_rule_headers.append(header)
+            for header in self.old_rule_headers:
+                self.delete(header, refresh = True)
 
 
 class Advanced_Firewall(Rule):
@@ -469,6 +501,10 @@ class Rule_Updater(threading.Thread):
             rule.delete(unique_id)
         self.unique_ids.remove(unique_id)
 
+    def refresh_rules(self, ip_list):
+        for rule in rule_list:
+            rule.refresh(ip_list)
+
     def run(self):
         while True:
             try:
@@ -499,6 +535,7 @@ class Rule_Updater(threading.Thread):
                     if not unique_id in self.unique_ids:
                         self.create_rule(unique_id, ip_address)
                 configs["IP UIDs"]["clean start"] = False
+                self.refresh_rules(self.ip_list)
                 print_("Done!")
             except:
                 print_("rule updater:", traceback.format_exc())
