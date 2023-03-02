@@ -405,7 +405,8 @@ class Google_Cloud(Rule):
             ).communicate("Y".encode())
             print_("Deleted rule with unique_id: {}".format(unique_id))
 
-    def split_ip_list(self, ip_adresses):
+    def split_ip_adresses(self, ip_adresses):
+        ip_adresses = list(ip_adresses)
         ip_lists = []
         while len(ip_adresses) > 256:
             ip_lists.append(ip_adresses[:256])
@@ -417,7 +418,7 @@ class Google_Cloud(Rule):
     def refresh(self, ip_list):
         if (configs["google cloud"]["group rules"]):
             current_header = get_random_string(5)
-            ip_lists = self.split_ip_list(ip_list)
+            ip_lists = self.split_ip_adresses(ip_list)
             del self.old_rule_headers
             self.old_rule_headers = self.current_rule_headers.copy()
             self.current_rule_headers.clear()
