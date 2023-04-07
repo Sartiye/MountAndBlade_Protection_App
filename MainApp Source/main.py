@@ -92,7 +92,7 @@ base_configs = {
         "project" : "",
         "header" : "warband",
         "priority" : 1000,
-        "network" : "",
+        "network" : "defualt",
         "group rules" : False,
     },
     "advanced firewall" : {
