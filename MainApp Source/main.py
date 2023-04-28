@@ -80,7 +80,7 @@ base_configs = {
     "warband" : {
         "interface" : "Ethernet",
         "host" : base_host,
-        "port" : 7240,
+        "port" : "7240",
     },
     "IP UIDs" : {
         "clean start" : False,
@@ -104,7 +104,7 @@ base_configs = {
         "interface" : "Ethernet",
         "filter" : "host {host} && port {port}",
         "host" : base_host,
-        "port" : 25161,
+        "port" : 7240,
     },
     "cloudflare" : {
         "active" : False,
