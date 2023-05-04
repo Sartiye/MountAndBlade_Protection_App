@@ -114,7 +114,7 @@ base_configs = {
     },
     "dumpcap" : {
         "active" : False,
-        "application" : "C:\Program Files\Wireshark\dumpcap",
+        "application" : "C:\\Program Files\\Wireshark\\dumpcap",
         "filesize" : 100000,
         "printname" : "stdout",
         "filename" : "mycap",
