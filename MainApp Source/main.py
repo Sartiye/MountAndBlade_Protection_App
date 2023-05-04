@@ -118,7 +118,7 @@ base_configs = {
         "filesize" : 100000,
         "printname" : "stdout",
         "filename" : "mycap",
-        "filter" : "host {host} && port {port}",
+        "filter" : "host {host} && portrange {port}",
         "show stdout" : False,
     },
     "eval" : {
