@@ -452,7 +452,7 @@ class Google_Cloud(Rule):
                 continue
             if ip_data.present:
                 to_be_deleted.append("-".join([unique_id, str(ip_data.index)]))
-                ip_data.index += 1
+                ip_data.index = (ip_data.index + 1) % 10
             ip_data_uid = "-".join([unique_id, str(ip_data.index)])
             self.create_rule(ip_data_uid, ",".join(ip_data.ip_addresses))
             ip_data.present = True
