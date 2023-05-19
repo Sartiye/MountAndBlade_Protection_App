@@ -643,14 +643,14 @@ def pyshark_listener():
         for packet in capture.sniff_continuously():
             source_ip = packet.ip.src
             if source_ip == configs["pyshark"]["host"]: continue
-            if source_ip not in verified_ip_addresses:
-                verified_ip_addresses.add(source_ip)
+            verified_ip_addresses.add(source_ip)
     except:
         print_("pyshark listener:", traceback.format_exc())
 
 def pyshark_verifier():
     try:
-        while time.sleep(1):
+        while True:
+            time.sleep(1)
             for source_ip in verified_ip_addresses:
                 if source_ip not in ip_lists["allowlist"]:
                     ip_lists["allowlist"].add(source_ip)
