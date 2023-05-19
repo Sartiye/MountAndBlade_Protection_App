@@ -93,7 +93,6 @@ base_configs = {
         "header" : "warband",
         "priority" : 1000,
         "network" : "defualt",
-        "group rules" : False,
     },
     "advanced firewall" : {
         "active" : False,
@@ -228,6 +227,13 @@ def import_commands(directory):
         else:
             import_error(directory, "command", i, "A command must be defined.")
 
+def check_ip_address(i, ip_address):
+    try:
+        ipaddress.IPv4Network(ip_address, strict = False)
+        return False
+    except (ipaddress.AddressValueError, ipaddress.NetmaskValueError) as exception:
+        import_error(directory, "ip address", i, exception)
+        return True
 
 def import_ip_list(directory):
     with ip_lists_lock:
@@ -246,10 +252,7 @@ def import_ip_list(directory):
             ip_address = ip_address.split("#")[0].strip(" ").strip("\t")
             if not ip_address:
                 continue
-            try:
-                ipaddress.IPv4Network(ip_address, strict = False)
-            except (ipaddress.AddressValueError, ipaddress.NetmaskValueError) as exception:
-                import_error(directory, "ip address", i, exception)
+            if check_ip_address(i, ip_address):
                 continue
             ip_list.add(ip_address)
 
@@ -259,6 +262,7 @@ class IP_UID_Manager():
         self.directory = directory
         self.ip_uids = dict()
         self.uids = set()
+        self.ip_datas = dict()
         self.uid_count = 1
 
     def import_directory(self):
@@ -276,14 +280,17 @@ class IP_UID_Manager():
             line = line.split("#")[0].replace("\t", "").replace(" ", "").lower()
             if not line:
                 continue
-            ip_address, unique_id = line.split(":")
-            try:
-                ipaddress.IPv4Network(ip_address, strict = False)
-            except (ipaddress.AddressValueError, ipaddress.NetmaskValueError) as exception:
-                import_error(directory, "ip address", i, exception)
+            unique_id, ip_data = line.split(":")
+            ip_addresses = ip_data.split(",")
+            if not ip_addresses:
                 continue
-            self.ip_uids[ip_address] = unique_id
+            for ip_address in ip_addresses:
+                if check_ip_address(i, ip_address):
+                    break
+            self.ip_uids[ip_data] = unique_id
             self.uids.add(unique_id)
+            if len(ip_addresses) > 1:
+                self.ip_datas[unique_id] = ip_addresses
         for i in range(len(self.uids)):
             if not str(self.uid_count) in self.uids:
                 break
@@ -301,15 +308,23 @@ class IP_UID_Manager():
             self.uids.add(unique_id)
             return unique_id
 
+    def update_unique_id(self, unique_id, ip_data):
+        self.ip_uids[ip_data] = unique_id
+        append_new_line(self.directory, "{} : {}".format(unique_id, ip_data))
+
     def get_unique_id(self, ip_address):
         if ip_address in self.ip_uids:
             return self.ip_uids[ip_address]
         unique_id = self.generate_new_unique_id()
-        self.ip_uids[ip_address] = unique_id
-        append_new_line(directories.ip_uids, "{} : {}".format(ip_address, unique_id))
+        self.update_unique_id(unique_id, ip_address)
         return unique_id
 
-#
+    def geneate_ip_data_uid(self, ip_address):
+        unique_id = self.generate_new_unique_id()
+        self.update_unique_id(unique_id, ip_address)
+        return unique_id
+
+
 class Event_Handler(FileSystemEventHandler):
     def __init__(self):
         FileSystemEventHandler.__init__(self)
@@ -344,6 +359,35 @@ class Rule():
         pass
 
 
+class IP_Data_Manager():
+    limit = 256
+    def __init__(self, unique_id, ip_addresses):
+        self.index = 0
+        self.unique_id = unique_id
+        self.ip_addresses = ip_addresses
+        self.update = False
+        self.present = False
+
+    def create(self, ip_address):
+        if ip_address in self.ip_addresses:
+            return True
+        if not len(self.ip_addresses) >= type(self).limit:
+            self.ip_addresses.append(ip_address)
+            self.update = True
+            return True
+
+    def delete(self, unique_id):
+        new_ip_addresses = self.ip_addresses.copy()
+        for ip_address in self.ip_addresses:
+            if ip_uid_manager.get_unique_id(ip_address) == unique_id:
+                new_ip_addresses.remove(ip_address)
+                break
+        else:
+            return
+        self.ip_addresses = new_ip_addresses
+        ip_data.update = True
+        return ip_address
+
 class Google_Cloud(Rule):
     def __init__(self):
         self.defined = True
@@ -353,9 +397,9 @@ class Google_Cloud(Rule):
             if not configs["google cloud"][config]:
                 print_("Warning! You need the config \"{}\" defined in order to activate google cloud.".format(config))
                 self.defined = False
-        self.current_header = get_random_string(5)
-        self.current_rule_headers = []
-        self.old_rule_headers = []
+        self.ip_datas = dict()
+        for unique_id, ip_addresses in ip_uid_manager.ip_datas.items():
+            self.ip_datas[unique_id] = IP_Data_Manager(unique_id, ip_addresses)
 
     def list(self):
         kwargs = {
@@ -367,67 +411,92 @@ class Google_Cloud(Rule):
             shell = True,
             stderr = subprocess.PIPE,
         ).decode().split("\n")][1:-1]
-        rules = [rule.split("-")[1] for rule in rules]
-        return rules
+        to_be_deleted = list()
+        for rule in reversed(rules):
+            unique_id, index = rule.split("-")[1:]
+            if unique_id not in self.ip_datas:
+                to_be_deleted.append("-".join([unique_id, index]))
+                continue
+            ip_data = self.ip_datas[unique_id]
+            ip_data.present = True
+            if ip_data.index > int(index):
+                to_be_deleted.append("-".join([unique_id, index]))
+            elif ip_data.index < int(index):
+                to_be_deleted.append("-".join([unique_id, str(ip_data.index)]))
+                ip_data.index = int(index)
+        return to_be_deleted
 
-    def create(self, unique_id, ip_address, refresh = False):
-        if (not configs["google cloud"]["group rules"] or refresh):
-            kwargs = {
-                "project" : configs["google cloud"]["project"],
-                "header" : configs["google cloud"]["header"],
-                "unique_id" : unique_id,
-                "priority" : configs["google cloud"]["priority"],
-                "network" : configs["google cloud"]["network"],
-                "port" : configs["warband"]["port"],
-                "ip_address" : ip_address,
-            }
-            subprocess.check_call(
-                commands["google cloud"]["create"].format(**kwargs),
-                shell = True,
-                stdout = subprocess.PIPE,
-                stderr = subprocess.PIPE,
-            )
-            print_("Created rule with ip address: {}, unique id: {}".format(ip_address, unique_id))
+    def create(self, unique_id, ip_address):
+        for ip_data_uid, ip_data in self.ip_datas.items():
+            if ip_data.create(ip_address):
+                print_("Added to rule-range ({}) the ip address: {}, unique id: {}".format(ip_data_uid, ip_address, unique_id))
+                break
+        else:
+            ip_data_uid = ip_uid_manager.geneate_ip_data_uid(ip_address)
+            ip_data = IP_Data_Manager(ip_data_uid, [ip_address])
+            self.ip_datas[ip_data_uid] = ip_data
+            print_("Created new rule-range ({}) with ip address: {}, unique id: {}".format(ip_data_uid, ip_address, unique_id))
 
-    def delete(self, unique_id, refresh = False):
-        if (not configs["google cloud"]["group rules"] or refresh):
-            kwargs = {
-                "project" : configs["google cloud"]["project"],
-                "header" : configs["google cloud"]["header"],
-                "unique_id" : unique_id,
-            }
-            subprocess.Popen(
-                commands["google cloud"]["delete"].format(**kwargs),
-                shell = True,
-                stdin = subprocess.PIPE,
-                stdout = subprocess.PIPE,
-                stderr = subprocess.PIPE,
-            ).communicate("Y".encode())
-            print_("Deleted rule with unique_id: {}".format(unique_id))
+    def delete(self, unique_id):
+        for ip_data_uid, ip_data in self.ip_datas.items():
+            ip_address = ip_data.delete(unique_id)
+            if ip_address:
+                print_("Deleted from rule-range ({}) the ip address: {}, unique id: {}".format(ip_data_uid, ip_address, unique_id))
 
-    def split_ip_adresses(self, ip_adresses):
-        ip_adresses = list(ip_adresses)
-        ip_lists = []
-        while len(ip_adresses) > 256:
-            ip_lists.append(ip_adresses[:256])
-            ip_adresses = ip_adresses[256:]
-        if ip_adresses:
-            ip_lists.append(ip_adresses)
-        return ip_lists
+    def create_rule(self, unique_id, ip_data):
+        kwargs = {
+            "project" : configs["google cloud"]["project"],
+            "header" : configs["google cloud"]["header"],
+            "unique_id" : unique_id,
+            "priority" : configs["google cloud"]["priority"],
+            "network" : configs["google cloud"]["network"],
+            "port" : configs["warband"]["port"],
+            "ip_data" : ip_data,
+        }
+        subprocess.check_call(
+            commands["google cloud"]["create"].format(**kwargs),
+            shell = True,
+            stdout = subprocess.PIPE,
+            stderr = subprocess.PIPE,
+        )
+        print_("Created rule-range with unique id: {}, ip data: {}".format(unique_id, ip_data))
 
-    def refresh(self, ip_list):
-        if (configs["google cloud"]["group rules"]):
-            current_header = get_random_string(5)
-            ip_lists = self.split_ip_adresses(ip_list)
-            del self.old_rule_headers
-            self.old_rule_headers = self.current_rule_headers.copy()
-            self.current_rule_headers.clear()
-            for i, ip_list in enumerate(ip_lists):
-                header = current_header + "-" + str(i)
-                self.create(header, ",".join(ip_list), refresh = True)
-                self.current_rule_headers.append(header)
-            for header in self.old_rule_headers:
-                self.delete(header, refresh = True)
+    def delete_rule(self, unique_id):
+        kwargs = {
+            "project" : configs["google cloud"]["project"],
+            "header" : configs["google cloud"]["header"],
+            "unique_id" : unique_id,
+        }
+        subprocess.Popen(
+            commands["google cloud"]["delete"].format(**kwargs),
+            shell = True,
+            stdin = subprocess.PIPE,
+            stdout = subprocess.PIPE,
+            stderr = subprocess.PIPE,
+        ).communicate("Y".encode())
+        print_("Deleted rule-range with unique_id: {}".format(unique_id))
+
+##    def split_ip_adresses(self, ip_adresses):
+##        ip_adresses = list(ip_adresses)
+##        ip_lists = []
+##        while len(ip_adresses) > 256:
+##            ip_lists.append(ip_adresses[:256])
+##            ip_adresses = ip_adresses[256:]
+##        if ip_adresses:
+##            ip_lists.append(ip_adresses)
+##        return ip_lists
+
+    def refresh(self):
+        to_be_deleted = list()
+        for ip_data_uid, ip_data in self.ip_datas.items():
+            if ip_data.present:
+                to_be_deleted.append("-".join(ip_data_uid, str(ip_data.index)))
+                ip_data.index += 1
+            unique_id = "-".join(ip_data_uid, str(ip_data.index))
+            self.create_rule(unique_id, ",".join(ip_data.ip_addresses))
+            ip_data.present = True
+        for unique_id in to_be_deleted:
+            self.delete_rule(unique_id)
 
 
 class Advanced_Firewall(Rule):
@@ -490,7 +559,8 @@ class Rule_Updater(threading.Thread):
 
     def list_rules(self):
         self.unique_ids.clear()
-        self.unique_ids.update(rule_list[0].list())
+        for rule in rule_list:
+            self.unique_ids.update(rule.list())
         
     def create_rule(self, unique_id, ip_address):
         for rule in rule_list:
@@ -536,7 +606,7 @@ class Rule_Updater(threading.Thread):
                     if not unique_id in self.unique_ids:
                         self.create_rule(unique_id, ip_address)
                 configs["IP UIDs"]["clean start"] = False
-                self.refresh_rules(self.ip_list)
+                self.refresh_rules()
                 print_("Done!")
             except:
                 print_("rule updater:", traceback.format_exc())
