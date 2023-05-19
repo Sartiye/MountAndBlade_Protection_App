@@ -360,7 +360,7 @@ class Rule():
 
 
 class IP_Data_Manager():
-    limit = 10
+    limit = 256
     def __init__(self, unique_id, ip_addresses):
         self.index = 0
         self.unique_id = unique_id
@@ -450,12 +450,14 @@ class Google_Cloud(Rule):
         for unique_id, ip_data in self.ip_datas.items():
             if ip_data.present and not ip_data.update:
                 continue
+            ip_data.update = False
             if ip_data.present:
                 to_be_deleted.append("-".join([unique_id, str(ip_data.index)]))
                 ip_data.index = (ip_data.index + 1) % 10
+            else:
+                ip_data.present = True
             ip_data_uid = "-".join([unique_id, str(ip_data.index)])
             self.create_rule(ip_data_uid, ",".join(ip_data.ip_addresses))
-            ip_data.present = True
             ip_uid_manager.update_unique_id_data(unique_id, ",".join(ip_data.ip_addresses))
         for ip_data_uid in to_be_deleted:
             self.delete_rule(ip_data_uid)
@@ -476,7 +478,7 @@ class Google_Cloud(Rule):
             stdout = subprocess.PIPE,
             stderr = subprocess.PIPE,
         )
-        print_("Created rule-range with unique id: {}, ip data: {}".format(unique_id, ip_data))
+        print_("Created rule-range with unique id: {}".format(unique_id))
 
     def delete_rule(self, unique_id):
         kwargs = {
