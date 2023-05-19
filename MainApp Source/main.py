@@ -308,7 +308,7 @@ class IP_UID_Manager():
             self.uids.add(unique_id)
             return unique_id
 
-    def update_unique_id(self, unique_id, ip_data):
+    def update_unique_id_data(self, unique_id, ip_data):
         self.ip_uids[ip_data] = unique_id
         append_new_line(self.directory, "{} : {}".format(unique_id, ip_data))
 
@@ -316,12 +316,12 @@ class IP_UID_Manager():
         if ip_address in self.ip_uids:
             return self.ip_uids[ip_address]
         unique_id = self.generate_new_unique_id()
-        self.update_unique_id(unique_id, ip_address)
+        self.update_unique_id_data(unique_id, ip_address)
         return unique_id
 
     def geneate_ip_data_uid(self, ip_address):
         unique_id = self.generate_new_unique_id()
-        self.update_unique_id(unique_id, ip_address)
+        self.update_unique_id_data(unique_id, ip_address)
         return unique_id
 
 
@@ -385,7 +385,7 @@ class IP_Data_Manager():
         else:
             return
         self.ip_addresses = new_ip_addresses
-        ip_data.update = True
+        self.update = True
         return ip_address
 
 class Google_Cloud(Rule):
@@ -445,6 +445,21 @@ class Google_Cloud(Rule):
             if ip_address:
                 print_("Deleted from rule-range ({}) the ip address: {}, unique id: {}".format(ip_data_uid, ip_address, unique_id))
 
+    def refresh(self):
+        to_be_deleted = list()
+        for unique_id, ip_data in self.ip_datas.items():
+            if ip_data.present and not ip_data.update:
+                continue
+            if ip_data.present:
+                to_be_deleted.append("-".join([unique_id, str(ip_data.index)]))
+                ip_data.index += 1
+            ip_data_uid = "-".join([unique_id, str(ip_data.index)])
+            self.create_rule(ip_data_uid, ",".join(ip_data.ip_addresses))
+            ip_data.present = True
+            ip_uid_manager.update_unique_id_data(unique_id, ",".join(ip_data.ip_addresses))
+        for ip_data_uid in to_be_deleted:
+            self.delete_rule(ip_data_uid)
+
     def create_rule(self, unique_id, ip_data):
         kwargs = {
             "project" : configs["google cloud"]["project"],
@@ -487,18 +502,6 @@ class Google_Cloud(Rule):
 ##        if ip_adresses:
 ##            ip_lists.append(ip_adresses)
 ##        return ip_lists
-
-    def refresh(self):
-        to_be_deleted = list()
-        for unique_id, ip_data in self.ip_datas.items():
-            if ip_data.present:
-                to_be_deleted.append("-".join([unique_id, str(ip_data.index)]))
-                ip_data.index += 1
-            ip_data_uid = "-".join([unique_id, str(ip_data.index)])
-            self.create_rule(ip_data_uid, ",".join(ip_data.ip_addresses))
-            ip_data.present = True
-        for ip_data_uid in to_be_deleted:
-            self.delete_rule(ip_data_uid)
 
 
 class Advanced_Firewall(Rule):
