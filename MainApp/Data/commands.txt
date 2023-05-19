@@ -1,6 +1,6 @@
 
 [google cloud.list]
-gcloud compute --project={project} firewall-rules list --filter="name~'{header}-.*'"
+gcloud compute --project={project} firewall-rules list --filter="name~'^{header}-.*$'"
 
 [google cloud.create]
 gcloud compute --project={project} firewall-rules create {header}-{unique_id} --direction=INGRESS --priority={priority} --network={network} --action=ALLOW --rules=udp:{port} --source-ranges={ip_data}

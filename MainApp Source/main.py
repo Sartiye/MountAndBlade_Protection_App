@@ -355,7 +355,7 @@ class Rule():
     def delete(self, unique_id):
         print_("Deleted rule with unique_id: {}".format(unique_id))
 
-    def refresh(self, ip_list):
+    def refresh(self):
         pass
 
 
