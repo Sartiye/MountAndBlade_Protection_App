@@ -572,9 +572,9 @@ class Rule_Updater(threading.Thread):
             rule.delete(unique_id)
         self.unique_ids.remove(unique_id)
 
-    def refresh_rules(self, ip_list):
+    def refresh_rules(self):
         for rule in rule_list:
-            rule.refresh(ip_list)
+            rule.refresh()
 
     def run(self):
         while True:
