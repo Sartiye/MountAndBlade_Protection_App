@@ -360,7 +360,7 @@ class Rule():
 
 
 class IP_Data_Manager():
-    limit = 256
+    limit = 10
     def __init__(self, unique_id, ip_addresses):
         self.index = 0
         self.unique_id = unique_id
