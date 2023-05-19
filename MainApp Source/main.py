@@ -653,14 +653,15 @@ def pyshark_verifier():
     try:
         while True:
             time.sleep(1)
-            for source_ip in verified_ip_addresses:
+            copy_verified_ip_addresses = verified_ip_addresses.copy()
+            verified_ip_addresses.clear()
+            for source_ip in copy_verified_ip_addresses:
                 if source_ip not in ip_lists["allowlist"]:
                     ip_lists["allowlist"].add(source_ip)
                     file_call = True
                     append_new_line(directories.allowlist, source_ip)
                     unique_id = ip_uid_manager.get_unique_id(source_ip)
                     print_("Verified new ip address: {}, unique_id: {}".format(source_ip, unique_id))
-            verified_ip_addresses.clear()
     except:
         print_("pyshark verifier:", traceback.format_exc())
 
