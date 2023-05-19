@@ -620,6 +620,7 @@ class Rule_Updater(threading.Thread):
 def pyshark_listener():
     global file_call
     try:
+        verified_ip_addresses = list()
         while configs["IP UIDs"]["clean start"]:
             time.sleep(1)
         capture = pyshark.LiveCapture(
@@ -639,9 +640,10 @@ def pyshark_listener():
         for packet in capture.sniff_continuously():
             source_ip = packet.ip.src
             if source_ip == configs["pyshark"]["host"]: continue
-            if not source_ip in ip_lists["allowlist"]:
+            if source_ip not in ip_lists["allowlist"] or source_ip not in verified_ip_addresses:
                 ip_lists["allowlist"].add(source_ip)
                 file_call = True
+                verified_ip_addresses.append(source_ip)
                 append_new_line(directories.allowlist, source_ip)
                 unique_id = ip_uid_manager.get_unique_id(source_ip)
                 print_("Verified new ip address: {}, unique_id: {}".format(source_ip, unique_id))
