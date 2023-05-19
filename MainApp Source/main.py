@@ -424,7 +424,9 @@ class Google_Cloud(Rule):
             elif ip_data.index < int(index):
                 to_be_deleted.append("-".join([unique_id, str(ip_data.index)]))
                 ip_data.index = int(index)
-        return to_be_deleted
+        for ip_data_uid in to_be_deleted:
+            self.delete_rule(ip_data_uid)
+        return list()
 
     def create(self, unique_id, ip_address):
         for ip_data_uid, ip_data in self.ip_datas.items():
@@ -488,15 +490,15 @@ class Google_Cloud(Rule):
 
     def refresh(self):
         to_be_deleted = list()
-        for ip_data_uid, ip_data in self.ip_datas.items():
+        for unique_id, ip_data in self.ip_datas.items():
             if ip_data.present:
-                to_be_deleted.append("-".join(ip_data_uid, str(ip_data.index)))
+                to_be_deleted.append("-".join([unique_id, str(ip_data.index)]))
                 ip_data.index += 1
-            unique_id = "-".join(ip_data_uid, str(ip_data.index))
-            self.create_rule(unique_id, ",".join(ip_data.ip_addresses))
+            ip_data_uid = "-".join(unique_id, str(ip_data.index))
+            self.create_rule(ip_data_uid, ",".join(ip_data.ip_addresses))
             ip_data.present = True
-        for unique_id in to_be_deleted:
-            self.delete_rule(unique_id)
+        for ip_data_uid in to_be_deleted:
+            self.delete_rule(ip_data_uid)
 
 
 class Advanced_Firewall(Rule):
