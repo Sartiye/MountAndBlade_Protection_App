@@ -227,7 +227,7 @@ def import_commands(directory):
         else:
             import_error(directory, "command", i, "A command must be defined.")
 
-def check_ip_address(i, ip_address):
+def check_ip_address(directory, i, ip_address):
     try:
         ipaddress.IPv4Network(ip_address, strict = False)
         return False
@@ -252,7 +252,7 @@ def import_ip_list(directory):
             ip_address = ip_address.split("#")[0].strip(" ").strip("\t")
             if not ip_address:
                 continue
-            if check_ip_address(i, ip_address):
+            if check_ip_address(directory, i, ip_address):
                 continue
             ip_list.add(ip_address)
 
@@ -285,7 +285,7 @@ class IP_UID_Manager():
             if not ip_addresses:
                 continue
             for ip_address in ip_addresses:
-                if check_ip_address(i, ip_address):
+                if check_ip_address(self.directory, i, ip_address):
                     break
             self.ip_uids[ip_data] = unique_id
             self.uids.add(unique_id)
