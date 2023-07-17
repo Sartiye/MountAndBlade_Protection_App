@@ -393,7 +393,7 @@ class Google_Cloud(Rule):
         self.defined = True
         if not check_commands("google cloud", []):
             self.defined = False
-        for config in ["project", "network"]:
+        for config in ["project"]:
             if not configs["google cloud"][config]:
                 print_("Warning! You need the config \"{}\" defined in order to activate google cloud.".format(config))
                 self.defined = False
@@ -735,7 +735,7 @@ def dumpcap_logger():
                 parameters,
                 startupinfo = startupinfo,
                 stdout = None if configs["dumpcap"]["show stdout"] else subprocess.PIPE,
-                stderr = subprocess.PIPE,
+                stderr = None if configs["dumpcap"]["show stdout"] else subprocess.PIPE,
             ).wait()
     except:
         print_("dumpcap logger:", traceback.format_exc())
