@@ -124,6 +124,12 @@ base_configs = {
         "active" : False,
         "header" : "Input: ",
     },
+    "ip_list_transmitter" : {
+        "active" : False,
+        "mode" : "server",
+        "host" : "0.0.0.0",
+        "port" : 7000,
+    },
 }
 base_commands = {
     "google cloud" : {
@@ -145,6 +151,7 @@ base_commands = {
     },
 }
 
+directory_keys = {"allowlist": directories.allowlist, "blacklist": directories.blacklist}
 ip_lists = {"allowlist": set(), "blacklist": set()}
 ip_lists_lock = threading.Lock()
 configs = base_configs.copy()
@@ -334,7 +341,19 @@ class Event_Handler(FileSystemEventHandler):
         
         for directory in [directories.allowlist, directories.blacklist]:
             if event.src_path == directory.string():
+                old_ip_list = ip_lists[directory.key].copy()
                 import_ip_list(directory)
+                new_ip_list = ip_lists[directory.key].copy()
+                try:
+                    if configs["ip_list_transmitter"]["active"] and configs["ip_list_transmitter"]["mode"] == "client":
+                        added_ips = "&".join(list(new_ip_list.difference(old_ip_list)))
+                        if added_ips:
+                            server = socket.socket()
+                            server.connect((configs["ip_list_transmitter"]["host"], configs["ip_list_transmitter"]["port"]))
+                            server.send("add%{}%{}".format(directory.key, added_ips).encode())
+                            server.close()
+                except:
+                    print_("ip_list_client:", traceback.format_exc())
                 if not file_call:
                     print_("Data change detected on file: {}".format(directory.basename()))
                 file_call = False
@@ -418,12 +437,13 @@ class Google_Cloud(Rule):
                 to_be_deleted.append("-".join([unique_id, index]))
                 continue
             ip_data = self.ip_datas[unique_id]
-            ip_data.present = True
             if ip_data.index > int(index):
                 to_be_deleted.append("-".join([unique_id, index]))
             elif ip_data.index < int(index):
-                to_be_deleted.append("-".join([unique_id, str(ip_data.index)]))
+                if ip_data.present:
+                    to_be_deleted.append("-".join([unique_id, str(ip_data.index)]))
                 ip_data.index = int(index)
+            ip_data.present = True
         for ip_data_uid in to_be_deleted:
             self.delete_rule(ip_data_uid)
         return list()
@@ -456,9 +476,8 @@ class Google_Cloud(Rule):
                 ip_data.index = (ip_data.index + 1) % 10
             else:
                 ip_data.present = True
-            ip_data_uid = "-".join([unique_id, str(ip_data.index)])
-            self.create_rule(ip_data_uid, ",".join(ip_data.ip_addresses))
-            ip_uid_manager.update_unique_id_data(unique_id, ",".join(ip_data.ip_addresses))
+            self.create_rule(unique_id, ip_data)
+            ip_uid_manager.update_unique_id_data(unique_id, ip_data)
         for ip_data_uid in to_be_deleted:
             self.delete_rule(ip_data_uid)
 
@@ -466,11 +485,11 @@ class Google_Cloud(Rule):
         kwargs = {
             "project" : configs["google cloud"]["project"],
             "header" : configs["google cloud"]["header"],
-            "unique_id" : unique_id,
-            "priority" : configs["google cloud"]["priority"],
+            "unique_id" : "-".join([unique_id, str(ip_data.index)]),
+            "priority" : configs["google cloud"]["priority"] + ip_data.index,
             "network" : configs["google cloud"]["network"],
             "port" : configs["warband"]["port"],
-            "ip_data" : ip_data,
+            "ip_addresses" : ",".join(ip_data.ip_addresses),
         }
         subprocess.check_call(
             commands["google cloud"]["create"].format(**kwargs),
@@ -624,7 +643,6 @@ class Rule_Updater(threading.Thread):
 
 verified_ip_addresses = set()
 def pyshark_listener():
-    global file_call
     try:
         while configs["IP UIDs"]["clean start"]:
             time.sleep(1)
@@ -649,6 +667,17 @@ def pyshark_listener():
     except:
         print_("pyshark listener:", traceback.format_exc())
 
+def add_ip_to_directory(directory, ip_address):
+    global file_call
+    ip_list = ip_lists[directory.key]
+    if ip_address in ip_list:
+        return False
+    ip_list.add(ip_address)
+    file_call = True
+    append_new_line(directory, ip_address)
+    unique_id = ip_uid_manager.get_unique_id(ip_address)
+    return unique_id
+
 def pyshark_verifier():
     try:
         while True:
@@ -656,11 +685,8 @@ def pyshark_verifier():
             copy_verified_ip_addresses = verified_ip_addresses.copy()
             verified_ip_addresses.clear()
             for source_ip in copy_verified_ip_addresses:
-                if source_ip not in ip_lists["allowlist"]:
-                    ip_lists["allowlist"].add(source_ip)
-                    file_call = True
-                    append_new_line(directories.allowlist, source_ip)
-                    unique_id = ip_uid_manager.get_unique_id(source_ip)
+                unique_id = add_ip_to_directory(directories.allowlist, source_ip)
+                if unique_id:
                     print_("Verified new ip address: {}, unique_id: {}".format(source_ip, unique_id))
     except:
         print_("pyshark verifier:", traceback.format_exc())
@@ -802,7 +828,32 @@ def eval_tool():
         except:
             print_("eval tool:", traceback.format_exc())
 
-            
+def ip_list_server():
+    while True:
+        try:
+            server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            print_("Listening on host: {host}, port: {port}".format(host = configs["ip_list_transmitter"]["host"], port = configs["ip_list_transmitter"]["port"]))
+            server.bind((configs["ip_list_transmitter"]["host"], configs["ip_list_transmitter"]["port"]))
+            server.listen(5)
+            while True:
+                client, addr = server.accept()
+                message = server.recv(1024).decode().split("%")
+                while (message):
+                    param = message.pop(0)
+                    if param in ["add", "remove"]:
+                        directory_key = message.pop(0)
+                        directory = directory_keys[directory_key]
+                        ip_addresses = message.pop(0).split("&")
+                    if param == "add":
+                        for ip_address in ip_addresses:
+                            unique_id = add_ip_to_directory(directory, ip_address)
+                            if unique_id:
+                                print_("Received new ip address {}, unique_id: {} from client: {}, ip list: {}".format(ip_address, unique_id, addr, directory_key))
+                client.close()
+        except:
+            print_("ip_list_server:", traceback.format_exc())
+
 try:
     print_("Loading...")
     import_configs(directories.configs)
@@ -839,6 +890,10 @@ try:
 
     if configs["dumpcap"]["active"]:
         threading.Thread(target = dumpcap_logger).start()
+        time.sleep(1)
+
+    if configs["ip_list_transmitter"]["active"] and configs["ip_list_transmitter"]["mode"] == "server":
+        threading.Thread(target = ip_list_server).start()
         time.sleep(1)
 
     rule_updater = Rule_Updater()
