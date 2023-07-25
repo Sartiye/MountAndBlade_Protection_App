@@ -482,7 +482,6 @@ class Google_Cloud(Rule):
             self.delete_rule(ip_data_uid)
 
     def create_rule(self, unique_id, ip_data):
-        print(configs["google cloud"]["network"])
         kwargs = {
             "project" : configs["google cloud"]["project"],
             "header" : configs["google cloud"]["header"],
