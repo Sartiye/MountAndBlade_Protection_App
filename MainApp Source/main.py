@@ -479,7 +479,7 @@ class Google_Cloud(Rule):
             else:
                 ip_data.present = True
             self.create_rule(unique_id, ip_data)
-            ip_uid_manager.update_unique_id_data(unique_id, ip_data)
+            ip_uid_manager.update_unique_id_data(unique_id, ",".join(ip_data.ip_addresses))
         for ip_data_uid in to_be_deleted:
             self.delete_rule(ip_data_uid)
 
