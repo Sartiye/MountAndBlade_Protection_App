@@ -487,7 +487,7 @@ class Google_Cloud(Rule):
             "header" : configs["google cloud"]["header"],
             "unique_id" : "-".join([unique_id, str(ip_data.index)]),
             "priority" : configs["google cloud"]["priority"] + ip_data.index,
-            "network" : configs["google cloud"]["network"],
+            "network" : " --network={}".format(configs["google cloud"]["network"]) if configs["google cloud"]["network"] != "default" else "",
             "port" : configs["warband"]["port"],
             "ip_addresses" : ",".join(ip_data.ip_addresses),
         }
