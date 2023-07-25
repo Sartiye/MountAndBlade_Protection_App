@@ -894,12 +894,25 @@ def packet_rate_limiter():
                 if configs["packet rate limiter"]["print"]:
                     print_([item for item in sorted(packet_rate_counts.items(), key = lambda x: x[1], reverse = True)][:4])
                 packet_rate_counts.clear()
+                last_interval_time = time.time()
             if not source_ip in packet_rate_counts:
                 packet_rate_counts[source_ip] = 0
             if packet_rate_counts[source_ip] == -1: continue
             packet_rate_counts[source_ip] += 1
             if configs["packet rate limiter"]["limit"] != -1 and packet_rate_counts[source_ip] >= configs["packet rate limiter"]["limit"]:
-                print_("{} has passed the rate limit. inteval: {}, limit: {}".format(source_ip, configs["packet rate limiter"]["interval"], configs["packet rate limiter"]["limit"]))
+                print_("{} has passed the rate limit. interval: {}, limit: {}".format(source_ip, configs["packet rate limiter"]["interval"], configs["packet rate limiter"]["limit"]))
+                try:
+                    if configs["ip_list_transmitter"]["active"] and configs["ip_list_transmitter"]["mode"] == "client":
+                        added_ip = source_ip
+                        addr = (configs["ip_list_transmitter"]["host"], configs["ip_list_transmitter"]["port"])
+                        print_("Sending new ip addresses {} to server: {}, ip list: {}".format(added_ip, addr, directories.blacklist.key))
+                        server = socket.socket()
+                        server.connect(addr)
+                        server.send("add%{}%{}".format(directories.blacklist.key, added_ip).encode())
+                        server.close()
+                except:
+                    print_("ip_list_client:", traceback.format_exc())
+                add_ip_to_directory(directories.blacklist, source_ip)
                 packet_rate_counts[source_ip] = -1
     except:
         print_("packet rate limiter:", traceback.format_exc())
