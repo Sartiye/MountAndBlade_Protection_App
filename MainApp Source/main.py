@@ -380,7 +380,7 @@ class Rule():
         pass
 
 
-class IP_Data_Manager():
+class IP_Data():
     limit = 256
     def __init__(self, unique_id, ip_addresses):
         self.index = 0
@@ -391,11 +391,11 @@ class IP_Data_Manager():
 
     def create(self, ip_address):
         if ip_address in self.ip_addresses:
-            return True
+            return "already have"
         if not len(self.ip_addresses) >= type(self).limit:
             self.ip_addresses.append(ip_address)
             self.update = True
-            return True
+            return "added"
 
     def delete(self, unique_id):
         new_ip_addresses = self.ip_addresses.copy()
@@ -420,7 +420,7 @@ class Google_Cloud(Rule):
                 self.defined = False
         self.ip_datas = dict()
         for unique_id, ip_addresses in ip_uid_manager.ip_datas.items():
-            self.ip_datas[unique_id] = IP_Data_Manager(unique_id, ip_addresses)
+            self.ip_datas[unique_id] = IP_Data(unique_id, ip_addresses)
 
     def list(self):
         kwargs = {
@@ -452,9 +452,14 @@ class Google_Cloud(Rule):
 
     def create(self, unique_id, ip_address):
         for ip_data_uid, ip_data in self.ip_datas.items():
-            if ip_data.create(ip_address):
+            result = ip_data.create(ip_address)
+            if result == "added":
                 print_("Added to rule-range ({}) the ip address: {}, unique id: {}".format(ip_data_uid, ip_address, unique_id))
                 break
+            elif result == "already have":
+                break
+            else:
+                pass
         else:
             ip_data_uid = ip_uid_manager.geneate_ip_data_uid(ip_address)
             ip_data = IP_Data_Manager(ip_data_uid, [ip_address])
@@ -499,7 +504,7 @@ class Google_Cloud(Rule):
             stdout = subprocess.PIPE,
             stderr = subprocess.PIPE,
         )
-        print_("Created rule-range with unique id: {}".format(unique_id))
+        print_("Created rule-range with unique id: {}".format(kwargs["unique_id"]))
 
     def delete_rule(self, unique_id):
         kwargs = {
