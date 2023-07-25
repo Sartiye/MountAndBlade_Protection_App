@@ -10,7 +10,6 @@ setup(
     options = {
         "py2exe" : {
             "dist_dir": "../MainApp",
-            "packages": ["pyshark"],
         }
     },
     packages = find_packages(),
