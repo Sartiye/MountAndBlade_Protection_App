@@ -130,6 +130,12 @@ base_configs = {
         "host" : "0.0.0.0",
         "port" : 7000,
     },
+    "packet rate limiter" : {
+        "active" : False,
+        "interval" : 120,
+        "limit" : -1,
+        "print" : False,
+    },
 }
 base_commands = {
     "google cloud" : {
@@ -462,7 +468,7 @@ class Google_Cloud(Rule):
                 pass
         else:
             ip_data_uid = ip_uid_manager.geneate_ip_data_uid(ip_address)
-            ip_data = IP_Data_Manager(ip_data_uid, [ip_address])
+            ip_data = IP_Data(ip_data_uid, [ip_address])
             self.ip_datas[ip_data_uid] = ip_data
             print_("Created new rule-range ({}) with ip address: {}, unique id: {}".format(ip_data_uid, ip_address, unique_id))
 
@@ -638,8 +644,8 @@ class Rule_Updater(threading.Thread):
                     unique_id = ip_uid_manager.get_unique_id(ip_address)
                     if not unique_id in self.unique_ids:
                         self.create_rule(unique_id, ip_address)
-                configs["IP UIDs"]["clean start"] = False
                 self.refresh_rules()
+                configs["IP UIDs"]["clean start"] = False
                 print_("Done!")
             except:
                 print_("rule updater:", traceback.format_exc())
@@ -861,6 +867,32 @@ def ip_list_server():
         except:
             print_("ip_list_server:", traceback.format_exc())
 
+def packet_rate_limiter():
+    try:
+        while configs["IP UIDs"]["clean start"]:
+            time.sleep(1)
+        capture = pyshark.LiveCapture(
+            configs["warband"]["interface"],
+            bpf_filter = configs["dumpcap"]["filter"].format(
+                host = configs["warband"]["host"],
+                port = configs["warband"]["port"]
+            ),
+        )
+        print_(
+            "Started rate limiting interface: \"{}\", host: {}, port: {}".format(
+                configs["warband"]["interface"],
+                configs["warband"]["host"],
+                configs["warband"]["port"],
+            )
+        )
+        
+        for packet in capture.sniff_continuously():
+            source_ip = packet.ip.src
+            if source_ip == configs["warband"]["host"]: continue
+            
+    except:
+        print_("packet rate limiter:", traceback.format_exc())
+
 try:
     print_("Loading...")
     import_configs(directories.configs)
@@ -902,6 +934,9 @@ try:
     if configs["ip_list_transmitter"]["active"] and configs["ip_list_transmitter"]["mode"] == "server":
         threading.Thread(target = ip_list_server).start()
         time.sleep(1)
+
+    if configs["packet rate limiter"]["active"]:
+        threading.Thread(target = packet_rate_limiter).start()
 
     rule_updater = Rule_Updater()
     rule_updater.update = True
