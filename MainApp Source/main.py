@@ -656,29 +656,30 @@ class Rule_Updater(threading.Thread):
 
 verified_ip_addresses = set()
 def pyshark_listener():
-    try:
-        while configs["IP UIDs"]["clean start"]:
-            time.sleep(1)
-        capture = pyshark.LiveCapture(
-            configs["pyshark"]["interface"],
-            bpf_filter = configs["pyshark"]["filter"].format(
-                host = configs["pyshark"]["host"],
-                port = configs["pyshark"]["port"]
-            ),
-        )
-        print_(
-            "Started listening interface: \"{}\", host: {}, port: {}".format(
+    while True:
+        try:
+            while configs["IP UIDs"]["clean start"]:
+                time.sleep(1)
+            capture = pyshark.LiveCapture(
                 configs["pyshark"]["interface"],
-                configs["pyshark"]["host"],
-                configs["pyshark"]["port"],
+                bpf_filter = configs["pyshark"]["filter"].format(
+                    host = configs["pyshark"]["host"],
+                    port = configs["pyshark"]["port"]
+                ),
             )
-        )
-        for packet in capture.sniff_continuously():
-            source_ip = packet.ip.src
-            if source_ip == configs["pyshark"]["host"]: continue
-            verified_ip_addresses.add(source_ip)
-    except:
-        print_("pyshark listener:", traceback.format_exc())
+            print_(
+                "Started listening interface: \"{}\", host: {}, port: {}".format(
+                    configs["pyshark"]["interface"],
+                    configs["pyshark"]["host"],
+                    configs["pyshark"]["port"],
+                )
+            )
+            for packet in capture.sniff_continuously():
+                source_ip = packet.ip.src
+                if source_ip == configs["pyshark"]["host"]: continue
+                verified_ip_addresses.add(source_ip)
+        except:
+            print_("pyshark listener:", traceback.format_exc())
 
 def add_ip_to_directory(directory, ip_address):
     global file_call
@@ -692,17 +693,18 @@ def add_ip_to_directory(directory, ip_address):
     return unique_id
 
 def pyshark_verifier():
-    try:
-        while True:
-            time.sleep(1)
-            copy_verified_ip_addresses = verified_ip_addresses.copy()
-            verified_ip_addresses.clear()
-            for source_ip in copy_verified_ip_addresses:
-                unique_id = add_ip_to_directory(directories.allowlist, source_ip)
-                if unique_id:
-                    print_("Verified new ip address: {}, unique_id: {}".format(source_ip, unique_id))
-    except:
-        print_("pyshark verifier:", traceback.format_exc())
+    while True:
+        try:
+            while True:
+                time.sleep(1)
+                copy_verified_ip_addresses = verified_ip_addresses.copy()
+                verified_ip_addresses.clear()
+                for source_ip in copy_verified_ip_addresses:
+                    unique_id = add_ip_to_directory(directories.allowlist, source_ip)
+                    if unique_id:
+                        print_("Verified new ip address: {}, unique_id: {}".format(source_ip, unique_id))
+        except:
+            print_("pyshark verifier:", traceback.format_exc())
 
 def cloudflare_communicator():
     if not check_commands("cloudflare", []):
@@ -868,30 +870,42 @@ def ip_list_server():
             print_("ip_list_server:", traceback.format_exc())
 
 def packet_rate_limiter():
-    try:
-        while configs["IP UIDs"]["clean start"]:
-            time.sleep(1)
-        capture = pyshark.LiveCapture(
-            configs["warband"]["interface"],
-            bpf_filter = configs["dumpcap"]["filter"].format(
-                host = configs["warband"]["host"],
-                port = configs["warband"]["port"]
-            ),
-        )
-        print_(
-            "Started rate limiting interface: \"{}\", host: {}, port: {}".format(
+    while True:
+        try:
+            while configs["IP UIDs"]["clean start"]:
+                time.sleep(1)
+            capture = pyshark.LiveCapture(
                 configs["warband"]["interface"],
-                configs["warband"]["host"],
-                configs["warband"]["port"],
+                bpf_filter = configs["dumpcap"]["filter"].format(
+                    host = configs["warband"]["host"],
+                    port = configs["warband"]["port"]
+                ),
             )
-        )
-        
-        for packet in capture.sniff_continuously():
-            source_ip = packet.ip.src
-            if source_ip == configs["warband"]["host"]: continue
-            
-    except:
-        print_("packet rate limiter:", traceback.format_exc())
+            print_(
+                "Started rate limiting interface: \"{}\", host: {}, port: {}".format(
+                    configs["warband"]["interface"],
+                    configs["warband"]["host"],
+                    configs["warband"]["port"],
+                )
+            )
+            packet_rate_counts = dict()
+            last_interval_time = time.time()
+            for packet in capture.sniff_continuously():
+                source_ip = packet.ip.src
+                if source_ip == configs["warband"]["host"]: continue
+                if time.time() - last_interval_time >= configs["packet rate limiter"]["interval"]:
+                    if configs["packet rate limiter"]["print"]:
+                        print_([item for item in sorted(packet_rate_counts.items(), key = lambda x: x[1], reverse = True)][:4])
+                    packet_rate_counts.clear()
+                if not source_ip in packet_rate_counts:
+                    packet_rate_counts[source_ip] = 0
+                if packet_rate_counts[source_ip] == -1: continue
+                packet_rate_counts[source_ip] += 1
+                if configs["packet rate limiter"]["count"] != -1 and packet_rate_counts[source_ip] >= configs["packet rate limiter"]["count"]:
+                    print_("{} has passed the rate limit. inteval: {}, count: {}".format(source_ip, configs["packet rate limiter"]["interval"], configs["packet rate limiter"]["count"]))
+                    packet_rate_counts[source_ip] = -1
+        except:
+            print_("packet rate limiter:", traceback.format_exc())
 
 try:
     print_("Loading...")
