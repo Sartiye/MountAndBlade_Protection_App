@@ -348,6 +348,7 @@ class Event_Handler(FileSystemEventHandler):
                     if configs["ip_list_transmitter"]["active"] and configs["ip_list_transmitter"]["mode"] == "client":
                         added_ips = "&".join(list(new_ip_list.difference(old_ip_list)))
                         if added_ips:
+                            print_("Sending new ip address {} to server: {}, ip list: {}".format(ip_address, addr, directory_key))
                             server = socket.socket()
                             server.connect((configs["ip_list_transmitter"]["host"], configs["ip_list_transmitter"]["port"]))
                             server.send("add%{}%{}".format(directory.key, added_ips).encode())
