@@ -898,8 +898,8 @@ def packet_rate_limiter():
                 packet_rate_counts[source_ip] = 0
             if packet_rate_counts[source_ip] == -1: continue
             packet_rate_counts[source_ip] += 1
-            if configs["packet rate limiter"]["count"] != -1 and packet_rate_counts[source_ip] >= configs["packet rate limiter"]["count"]:
-                print_("{} has passed the rate limit. inteval: {}, count: {}".format(source_ip, configs["packet rate limiter"]["interval"], configs["packet rate limiter"]["count"]))
+            if configs["packet rate limiter"]["limit"] != -1 and packet_rate_counts[source_ip] >= configs["packet rate limiter"]["limit"]:
+                print_("{} has passed the rate limit. inteval: {}, limit: {}".format(source_ip, configs["packet rate limiter"]["interval"], configs["packet rate limiter"]["limit"]))
                 packet_rate_counts[source_ip] = -1
     except:
         print_("packet rate limiter:", traceback.format_exc())
