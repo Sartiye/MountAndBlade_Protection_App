@@ -1,7 +1,6 @@
 import sys
 import os
 import traceback
-import msvcrt
 import time
 import random
 import string as string_lib
@@ -17,13 +16,6 @@ from watchdog.events import FileSystemEventHandler
 from module_directories import directories
 import admin
 
-if not admin.isUserAdmin():
-    admin.runAsAdmin(wait = False)
-    sys.exit(0)
-
-eval_string = ""
-file_call = False
-
 def print_(*string, sep = " ", end = "\n", flush = False):
     if eval_string:
         print("\r" + " " * len(eval_string) + "\r", end = ""),
@@ -36,7 +28,17 @@ def print_(*string, sep = " ", end = "\n", flush = False):
         print("[{}]".format(datetime.datetime.now().strftime("%H:%M:%S")), *string, sep = sep, end = end, flush = flush)
         sys.stdout = old_stdout
     if eval_string:
-        print(eval_string, end = "", flush = True),
+        print(eval_string, end = "", flush = True)
+        
+try:
+    if not admin.isUserAdmin():
+        admin.runAsAdmin(wait = False)
+        sys.exit(0)
+except RuntimeError:
+    print_("Couldn't start the program as admin.")
+
+eval_string = ""
+file_call = False
         
 def check_file(directory):
     try:
@@ -124,11 +126,16 @@ base_configs = {
         "active" : False,
         "header" : "Input: ",
     },
-    "ip_list_transmitter" : {
+    "ip list transmitter" : {
         "active" : False,
         "mode" : "server",
         "host" : "0.0.0.0",
         "port" : 7000,
+    },
+    "bannerlord listener" : {
+        "active" : False,
+        "host" : "0.0.0.0",
+        "port" : 7010,
     },
     "packet rate limiter" : {
         "active" : False,
@@ -351,15 +358,21 @@ class Event_Handler(FileSystemEventHandler):
                 import_ip_list(directory)
                 new_ip_list = ip_lists[directory.key].copy()
                 try:
-                    if configs["ip_list_transmitter"]["active"] and configs["ip_list_transmitter"]["mode"] == "client":
+                    if configs["ip list transmitter"]["active"] and configs["ip list transmitter"]["mode"] == "client":
+                        addr = (configs["ip list transmitter"]["host"], configs["ip list transmitter"]["port"])
+                        message = list()
                         added_ips = "&".join(list(new_ip_list.difference(old_ip_list)))
                         if added_ips:
-                            addr = (configs["ip_list_transmitter"]["host"], configs["ip_list_transmitter"]["port"])
-                            print_("Sending new ip addresses {} to server: {}, ip list: {}".format(added_ips, addr, directory.key))
-                            server = socket.socket()
-                            server.connect(addr)
-                            server.send("add%{}%{}".format(directory.key, added_ips).encode())
-                            server.close()
+                            print_("Adding ip addresses {} to server: {}, ip list: {}".format(added_ips, addr, directory.key))
+                            message.extend("add", directory.key, added_ips)
+                        removed_ips = "&".join(list(old_ip_list.difference(new_ip_list)))
+                        if removed_ips:
+                            print_("Removing ip addresses {} from server: {}, ip list: {}".format(removed_ips, addr, directory.key))
+                            message.extend("add", directory.key, removed_ips)
+                        server = socket.socket()
+                        server.connect(addr)
+                        server.send("%".join(message).encode())
+                        server.close()
                 except:
                     print_("ip_list_client:", traceback.format_exc())
                 if not file_call:
@@ -780,6 +793,8 @@ def dumpcap_logger():
         print_("dumpcap logger:", traceback.format_exc())
 
 def eval_tool():
+    import msvcrt
+    
     def append_eval_string(string):
         global eval_string
         
@@ -846,8 +861,8 @@ def ip_list_server():
         try:
             server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            print_("Listening on host: {host}, port: {port}".format(host = configs["ip_list_transmitter"]["host"], port = configs["ip_list_transmitter"]["port"]))
-            server.bind((configs["ip_list_transmitter"]["host"], configs["ip_list_transmitter"]["port"]))
+            print_("Listening on host: {host}, port: {port}".format(host = configs["ip list transmitter"]["host"], port = configs["ip list transmitter"]["port"]))
+            server.bind((configs["ip list transmitter"]["host"], configs["ip list transmitter"]["port"]))
             server.listen(5)
             while True:
                 client, addr = server.accept()
@@ -866,6 +881,32 @@ def ip_list_server():
                 client.close()
         except:
             print_("ip_list_server:", traceback.format_exc())
+
+def bannerlord_listener():
+    while True:
+        try:
+            server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            addr = (configs["bannerlord listener"]["host"], configs["bannerlord listener"]["port"])
+            print_("Listening on addr: {addr}".format(addr = addr))
+            server.bind(addr)
+            server.listen(5)
+            while True:
+                client, addr = server.accept()
+                message = client.recv(1024).decode().split("%")
+                while (message):
+                    param = message.pop(0)
+                    if param in ["add", "remove"]:
+                        directory_key = message.pop(0)
+                        directory = directory_keys[directory_key]
+                        ip_address = message.pop(0)
+                    if param == "add":
+                        unique_id = add_ip_to_directory(directory, ip_address)
+                        if unique_id:
+                            print_("Received new ip address {}, unique_id: {} from client: {}, ip list: {}".format(ip_address, unique_id, addr, directory_key))
+                client.close()
+        except:
+            print_("bannerlord_listener:", traceback.format_exc())
 
 def packet_rate_limiter():
     try:
@@ -910,7 +951,7 @@ def packet_rate_limiter():
                 if configs["packet rate limiter"]["limit"] != -1 and packet_rate_counts[source_ip] >= configs["packet rate limiter"]["limit"]:
                     print_("{} has passed the rate limit. interval: {}, limit: {}".format(source_ip, configs["packet rate limiter"]["interval"], configs["packet rate limiter"]["limit"]))
                     try:
-                        if configs["ip_list_transmitter"]["active"] and configs["ip_list_transmitter"]["mode"] == "client":
+                        if configs["ip list transmitter"]["active"] and configs["ip list transmitter"]["mode"] == "client":
                             added_ip = source_ip
                             addr = (configs["ip_list_transmitter"]["host"], configs["ip_list_transmitter"]["port"])
                             print_("Sending new ip addresses {} to server: {}, ip list: {}".format(added_ip, addr, directories.blacklist.key))
@@ -963,8 +1004,12 @@ try:
         threading.Thread(target = dumpcap_logger).start()
         time.sleep(1)
 
-    if configs["ip_list_transmitter"]["active"] and configs["ip_list_transmitter"]["mode"] == "server":
+    if configs["ip list transmitter"]["active"] and configs["ip list transmitter"]["mode"] == "server":
         threading.Thread(target = ip_list_server).start()
+        time.sleep(1)
+
+    if configs["bannerlord listener"]["active"]:
+        threading.Thread(target = bannerlord_listener).start()
         time.sleep(1)
 
     if configs["packet rate limiter"]["active"]:
