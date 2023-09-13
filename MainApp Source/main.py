@@ -354,27 +354,6 @@ class Event_Handler(FileSystemEventHandler):
         
         for directory in [directories.allowlist, directories.blacklist]:
             if event.src_path == directory.string():
-                old_ip_list = ip_lists[directory.key].copy()
-                import_ip_list(directory)
-                new_ip_list = ip_lists[directory.key].copy()
-                try:
-                    if configs["ip list transmitter"]["active"] and configs["ip list transmitter"]["mode"] == "client":
-                        addr = (configs["ip list transmitter"]["host"], configs["ip list transmitter"]["port"])
-                        message = list()
-                        added_ips = "&".join(list(new_ip_list.difference(old_ip_list)))
-                        if added_ips:
-                            print_("Adding ip addresses {} to server: {}, ip list: {}".format(added_ips, addr, directory.key))
-                            message.extend("add", directory.key, added_ips)
-                        removed_ips = "&".join(list(old_ip_list.difference(new_ip_list)))
-                        if removed_ips:
-                            print_("Removing ip addresses {} from server: {}, ip list: {}".format(removed_ips, addr, directory.key))
-                            message.extend("add", directory.key, removed_ips)
-                        server = socket.socket()
-                        server.connect(addr)
-                        server.send("%".join(message).encode())
-                        server.close()
-                except:
-                    print_("ip_list_client:", traceback.format_exc())
                 if not file_call:
                     print_("Data change detected on file: {}".format(directory.basename()))
                 file_call = False
@@ -540,16 +519,6 @@ class Google_Cloud(Rule):
         ).communicate("Y".encode())
         print_("Deleted rule-range with unique_id: {}".format(unique_id))
 
-##    def split_ip_adresses(self, ip_adresses):
-##        ip_adresses = list(ip_adresses)
-##        ip_lists = []
-##        while len(ip_adresses) > 256:
-##            ip_lists.append(ip_adresses[:256])
-##            ip_adresses = ip_adresses[256:]
-##        if ip_adresses:
-##            ip_lists.append(ip_adresses)
-##        return ip_lists
-
 
 class Advanced_Firewall(Rule):
     def __init__(self):
@@ -714,6 +683,17 @@ def pyshark_verifier():
                 unique_id = add_ip_to_directory(directories.allowlist, source_ip)
                 if unique_id:
                     print_("Verified new ip address: {}, unique_id: {}".format(source_ip, unique_id))
+                    try:
+                        if configs["ip list transmitter"]["active"] and configs["ip list transmitter"]["mode"] == "client":
+                            added_ip = source_ip
+                            addr = (configs["ip list transmitter"]["host"], configs["ip list transmitter"]["port"])
+                            print_("Sending new ip addresses {} to server: {}, ip list: {}".format(source_ip, addr, directories.allowlist.key))
+                            server = socket.socket()
+                            server.connect(addr)
+                            server.send("add%{}%{}".format(directories.allowlist.key, source_ip).encode())
+                            server.close()
+                    except:
+                        print_("ip list transmitter:", traceback.format_exc())
     except:
         print_("pyshark verifier:", traceback.format_exc())
 
@@ -888,12 +868,13 @@ def bannerlord_listener():
             server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             addr = (configs["bannerlord listener"]["host"], configs["bannerlord listener"]["port"])
-            print_("Listening on addr: {addr}".format(addr = addr))
+            print_("Listening bannerlord on addr: {addr}".format(addr = addr))
             server.bind(addr)
             server.listen(5)
             while True:
                 client, addr = server.accept()
                 message = client.recv(1024).decode().split("%")
+                print(message)
                 while (message):
                     param = message.pop(0)
                     if param in ["add", "remove"]:
