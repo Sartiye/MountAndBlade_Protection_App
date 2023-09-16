@@ -10,6 +10,8 @@ import subprocess
 import datetime
 import pyshark
 import ipaddress
+import requests
+import json
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
@@ -71,6 +73,14 @@ def check_commands(category, not_necessary_commands):
             defined = False
     return defined
 
+def check_configs(category, necessary_configs):
+    defined = True
+    for config in necessary_configs:
+        if not configs[category][config]:
+            print_("Warning! You need the config \"{}\" defined in order to activate {}.".format(config, category))
+            defined = False
+    return defined
+
 def get_random_string(length):
     random_list = []
     for i in range(length):
@@ -88,6 +98,11 @@ base_configs = {
         "clean start" : False,
         "randomize" : False,
         "always list" : False,
+        "allowlist size" : -1,
+    },
+    "advanced firewall" : {
+        "active" : False,
+        "header" : "warband",
     },
     "google cloud" : {
         "active" : False,
@@ -96,9 +111,10 @@ base_configs = {
         "priority" : 1000,
         "network" : "default",
     },
-    "advanced firewall" : {
+    "hetzner" : {
         "active" : False,
-        "header" : "warband",
+        "api" : "",
+        "firewall" : "warband",
     },
     "pyshark" : {
         "active" : False,
@@ -145,15 +161,19 @@ base_configs = {
     },
 }
 base_commands = {
+    "advanced firewall" : {
+        "list" : "",
+        "create" : "",
+        "delete" : "",
+    },
     "google cloud" : {
         "list" : "",
         "create" : "",
         "delete" : "",
     },
-    "advanced firewall" : {
+    "hetzner" : {
         "list" : "",
-        "create" : "",
-        "delete" : "",
+        "set" : "",
     },
     "cloudflare" : {
         "ping" : "",
@@ -164,8 +184,8 @@ base_commands = {
     },
 }
 
-directory_keys = {"allowlist": directories.allowlist, "blacklist": directories.blacklist}
-ip_lists = {"allowlist": set(), "blacklist": set()}
+directory_keys = {"allowlist": directories.allowlist, "blacklist": directories.blacklist, "currentlist": directories.currentlist}
+ip_lists = {"allowlist": list(), "blacklist": list(), "currentlist": list()}
 ip_lists_lock = threading.Lock()
 configs = base_configs.copy()
 commands = base_commands.copy()
@@ -274,7 +294,7 @@ def import_ip_list(directory):
                 continue
             if check_ip_address(directory, i, ip_address):
                 continue
-            ip_list.add(ip_address)
+            ip_list.append(ip_address)
 
 
 class IP_UID_Manager():
@@ -354,6 +374,7 @@ class Event_Handler(FileSystemEventHandler):
         
         for directory in [directories.allowlist, directories.blacklist]:
             if event.src_path == directory.string():
+                import_ip_list(directory)
                 if not file_call:
                     print_("Data change detected on file: {}".format(directory.basename()))
                 file_call = False
@@ -363,7 +384,7 @@ class Event_Handler(FileSystemEventHandler):
 
 class Rule():
     def __init__(self):
-        self.defined = False
+        self.defined = True
 
     def list(self):
         return list()
@@ -378,8 +399,57 @@ class Rule():
         pass
 
 
+class Advanced_Firewall(Rule):
+    def __init__(self):
+        Rule.__init__(self)
+        if not check_commands("advanced firewall", []):
+            self.defined = False
+
+    def list(self):
+        kwargs = {
+            "port" : configs["warband"]["port"],
+        }
+        try:
+            rules = [rule.strip().split("-")[1] for rule in subprocess.check_output(
+                commands["advanced firewall"]["list"].format(**kwargs),
+                shell = True,
+                stderr = subprocess.PIPE,
+            ).decode().split("\r\n")[:-1]]
+        except subprocess.CalledProcessError:
+            return []
+        return rules
+
+    def create(self, unique_id, ip_address):
+        kwargs = {
+            "header" : configs["advanced firewall"]["header"],
+            "unique_id" : unique_id,
+            "port" : configs["warband"]["port"],
+            "ip_address" : ip_address,
+        }
+        subprocess.check_call(
+            commands["advanced firewall"]["create"].format(**kwargs),
+            shell = True,
+            stdout = subprocess.PIPE,
+            stderr = subprocess.PIPE,
+        )
+        print_("Created rule with ip address: {}, unique id: {}".format(ip_address, unique_id))
+
+    def delete(self, unique_id):
+        kwargs = {
+            "header" : configs["advanced firewall"]["header"],
+            "unique_id" : unique_id,
+        }
+        subprocess.check_call(
+            commands["advanced firewall"]["delete"].format(**kwargs),
+            shell = True,
+            stdout = subprocess.PIPE,
+            stderr = subprocess.PIPE,
+        )
+        print_("Deleted rule with unique_id: {}".format(unique_id))
+
+
 class IP_Data():
-    limit = 256
+    limit = 100
     def __init__(self, unique_id, ip_addresses):
         self.index = 0
         self.unique_id = unique_id
@@ -407,29 +477,16 @@ class IP_Data():
         self.update = True
         return ip_address
 
-class Google_Cloud(Rule):
+
+class Advanced_Rule(Rule):
     def __init__(self):
-        self.defined = True
-        if not check_commands("google cloud", []):
-            self.defined = False
-        for config in ["project"]:
-            if not configs["google cloud"][config]:
-                print_("Warning! You need the config \"{}\" defined in order to activate google cloud.".format(config))
-                self.defined = False
+        Rule.__init__(self)
         self.ip_datas = dict()
         for unique_id, ip_addresses in ip_uid_manager.ip_datas.items():
             self.ip_datas[unique_id] = IP_Data(unique_id, ip_addresses)
 
     def list(self):
-        kwargs = {
-            "project" : configs["google cloud"]["project"],
-            "header" : configs["google cloud"]["header"],
-        }
-        rules = [str(rule).split(" ")[0] for rule in subprocess.check_output(
-            commands["google cloud"]["list"].format(**kwargs),
-            shell = True,
-            stderr = subprocess.PIPE,
-        ).decode().split("\n")][1:-1]
+        rules = self.list_rules()
         to_be_deleted = list()
         for rule in reversed(rules):
             unique_id, index = rule.split("-")[1:]
@@ -485,7 +542,42 @@ class Google_Cloud(Rule):
             ip_uid_manager.update_unique_id_data(unique_id, ",".join(ip_data.ip_addresses))
         for ip_data_uid in to_be_deleted:
             self.delete_rule(ip_data_uid)
+        self.refresh_rules()
 
+    def list_rules(self):
+        return list()
+
+    def create_rule(self, unique_id, ip_data):
+        print_("Created rule-range with unique id: {}".format("-".join([unique_id, str(ip_data.index)])))
+
+    def delete_rule(self, unique_id):
+        print_("Deleted rule-range with unique_id: {}".format(unique_id))
+
+    def refresh_rules(self):
+        pass
+
+
+class Google_Cloud(Advanced_Rule):
+    def __init__(self):
+        Advanced_Rule.__init__(self)
+        if not check_commands("google cloud", []):
+            self.defined = False
+            return
+        if not check_configs("google cloud", ["project"]):
+            self.defined = False
+            return
+
+    def list_rules(self):
+        kwargs = {
+            "project" : configs["google cloud"]["project"],
+            "header" : configs["google cloud"]["header"],
+        }
+        return [str(rule).split(" ")[0] for rule in subprocess.check_output(
+            commands["google cloud"]["list"].format(**kwargs),
+            shell = True,
+            stderr = subprocess.PIPE,
+        ).decode().split("\n")][1:-1]
+        
     def create_rule(self, unique_id, ip_data):
         kwargs = {
             "project" : configs["google cloud"]["project"],
@@ -520,53 +612,61 @@ class Google_Cloud(Rule):
         print_("Deleted rule-range with unique_id: {}".format(unique_id))
 
 
-class Advanced_Firewall(Rule):
+class Hetzner(Advanced_Rule):
     def __init__(self):
-        self.defined = True
-        if not check_commands("advanced firewall", []):
+        Advanced_Rule.__init__(self)
+        if not check_commands("hetzner", []):
             self.defined = False
+            return
+        if not check_configs("hetzner", ["api"]):
+            self.defined = False
+            return
+        self.firewall = None
+        self.rules = dict()
 
-    def list(self):
-        kwargs = {
-            "port" : configs["warband"]["port"],
+    def list_rules(self):
+        headers = {
+            "Authorization": "Bearer {}".format(configs["hetzner"]["api"]),
         }
-        try:
-            rules = [rule.strip().split("-")[1] for rule in subprocess.check_output(
-                commands["advanced firewall"]["list"].format(**kwargs),
-                shell = True,
-                stderr = subprocess.PIPE,
-            ).decode().split("\r\n")[:-1]]
-        except subprocess.CalledProcessError:
-            return []
-        return rules
+        for firewall in requests.request("GET", "https://api.hetzner.cloud/v1/firewalls", headers = headers).json()["firewalls"]:
+            if firewall["name"] != configs["hetzner"]["firewall"]:
+                continue
+            self.firewall = firewall
+            self.rules.clear()
+            for rule in self.firewall["rules"]:
+                self.rules[rule["description"].split("-")[1]] = rule
+            break
+        else:
+            print_("ERROR! Hetzner firewall ({}) is not found.".format(configs["hetzner"]["firewall"]))
+            return list()
+        return [rule["description"] for unique_id, rule in self.rules.items()]
 
-    def create(self, unique_id, ip_address):
-        kwargs = {
-            "header" : configs["advanced firewall"]["header"],
-            "unique_id" : unique_id,
-            "port" : configs["warband"]["port"],
-            "ip_address" : ip_address,
+    def create_rule(self, unique_id, ip_data):
+        self.rules[unique_id] = {
+          "description": "-".join([configs["hetzner"]["firewall"], unique_id, str(ip_data.index)]),
+          "direction": "in",
+          "port": configs["warband"]["port"],
+          "protocol": "udp",
+          "source_ips": list(ip_data.ip_addresses)
         }
-        subprocess.check_call(
-            commands["advanced firewall"]["create"].format(**kwargs),
-            shell = True,
-            stdout = subprocess.PIPE,
-            stderr = subprocess.PIPE,
-        )
-        print_("Created rule with ip address: {}, unique id: {}".format(ip_address, unique_id))
+        print_("Created rule-range with unique id: {}".format(unique_id))
 
-    def delete(self, unique_id):
-        kwargs = {
-            "header" : configs["advanced firewall"]["header"],
-            "unique_id" : unique_id,
+    def delete_rule(self, unique_id):
+        self.rules.pop(unique_id)
+        print_("Deleted rule-range with unique_id: {}".format(unique_id))
+    
+    def refresh_rules(self):
+        if not self.firewall:
+            return
+        print_("Refreshing Firewall...")
+        headers = {
+            "Authorization": "Bearer {}".format(configs["hetzner"]["api"]),
+            "Content-Type": "application/json",
         }
-        subprocess.check_call(
-            commands["advanced firewall"]["delete"].format(**kwargs),
-            shell = True,
-            stdout = subprocess.PIPE,
-            stderr = subprocess.PIPE,
-        )
-        print_("Deleted rule with unique_id: {}".format(unique_id))
+        data = {
+            "rules" : [rule for unique_id, rule in self.rules.items()],
+        }
+        requests.request("POST", "https://api.hetzner.cloud/v1/firewalls/{}/actions/set_rules".format(self.firewall["id"]), data = json.dumps(data), headers = headers)
 
 
 class Rule_Updater(threading.Thread):
@@ -578,22 +678,22 @@ class Rule_Updater(threading.Thread):
         self.ip_list = set()
         self.unique_ids = set()
 
-    def list_rules(self):
+    def list(self):
         self.unique_ids.clear()
         for rule in rule_list:
             self.unique_ids.update(rule.list())
         
-    def create_rule(self, unique_id, ip_address):
+    def create(self, unique_id, ip_address):
         for rule in rule_list:
             rule.create(unique_id, ip_address)
         self.unique_ids.add(unique_id)
         
-    def delete_rule(self, unique_id):
+    def delete(self, unique_id):
         for rule in rule_list:
             rule.delete(unique_id)
         self.unique_ids.remove(unique_id)
 
-    def refresh_rules(self):
+    def refresh(self):
         for rule in rule_list:
             rule.refresh()
 
@@ -605,14 +705,16 @@ class Rule_Updater(threading.Thread):
                 self.update = False
 
                 with ip_lists_lock:
-                    new_ip_list = ip_lists["allowlist"].difference(ip_lists["blacklist"])
+                    if configs["IP UIDs"]["allowlist size"] > 0:
+                        ip_lists["allowlist"] = ip_lists["allowlist"][max(len(ip_lists["allowlist"]) - configs["IP UIDs"]["allowlist size"], 0):]
+                    new_ip_list = set(ip_lists["allowlist"]).union(set(ip_lists["currentlist"])).difference(set(ip_lists["blacklist"]))
                 
                 if not self.force and self.ip_list == new_ip_list:
                     time.sleep(1); continue
                 print_("Updating IP List rules{}...".format(" (force: True)" if self.force else ""))
                 
                 if configs["IP UIDs"]["always list"] or self.force:
-                    self.list_rules()
+                    self.list()
                 self.force = False
                 
                 del self.ip_list
@@ -621,12 +723,12 @@ class Rule_Updater(threading.Thread):
                 old_unique_ids = self.unique_ids.copy()
                 difference = old_unique_ids.difference(new_unique_ids)
                 for unique_id in difference:
-                    self.delete_rule(unique_id)
+                    self.delete(unique_id)
                 for ip_address in self.ip_list:
                     unique_id = ip_uid_manager.get_unique_id(ip_address)
                     if not unique_id in self.unique_ids:
-                        self.create_rule(unique_id, ip_address)
-                self.refresh_rules()
+                        self.create(unique_id, ip_address)
+                self.refresh()
                 configs["IP UIDs"]["clean start"] = False
                 print_("Done!")
             except:
@@ -667,7 +769,7 @@ def add_ip_to_directory(directory, ip_address):
     ip_list = ip_lists[directory.key]
     if ip_address in ip_list:
         return False
-    ip_list.add(ip_address)
+    ip_list.append(ip_address)
     file_call = True
     append_new_line(directory, ip_address)
     unique_id = ip_uid_manager.get_unique_id(ip_address)
@@ -970,6 +1072,11 @@ try:
 
     if configs["google cloud"]["active"]:
         rule = Google_Cloud()
+        if rule.defined:
+            rule_list.append(rule)
+
+    if configs["hetzner"]["active"]:
+        rule = Hetzner()
         if rule.defined:
             rule_list.append(rule)
 
