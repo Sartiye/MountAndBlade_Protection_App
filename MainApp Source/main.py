@@ -671,8 +671,9 @@ class Hetzner(Advanced_Rule):
             "rules" : [rule for unique_id, rule in self.rules.items()],
         }
         response = requests.request("POST", commands["hetzner"]["set"].format(firewall_id = self.firewall["id"]), data = json.dumps(data), headers = headers).json()
-        if response["error"]:
-            print_(response["error"])
+        for action in response["actions"]:
+            if action["error"]:
+                print_(action["error"])
 
 
 class Rule_Updater(threading.Thread):
