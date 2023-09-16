@@ -967,17 +967,20 @@ def ip_list_server():
                     if param in ["add", "remove"]:
                         directory_key = message.pop(0)
                         directory = directory_keys[directory_key]
-                        ip_list = ip_lists[directory.key]
+                        ip_list = ip_lists[directory_key]
                         ip_addresses = message.pop(0).split("&")
                     if param == "add":
                         for ip_address in ip_addresses:
                             unique_id = add_ip_to_directory(directory, ip_address)
                             if unique_id:
                                 print_("Adding ip address {}, unique_id: {} from client: {}, ip list: {}".format(ip_address, unique_id, addr, directory_key))
-                    if param == "remove":
+                    elif param == "remove":
                         for ip_address in ip_addresses:
                             if ip_address in ip_list:
-                                ip_list.pop(ip_address)
+                                with ip_lists_lock:
+                                    ipset = set(ip_list)
+                                    ipset.remove(ip_address)
+                                    ip_list = list(ipset)
                                 print_("Removing ip address {}, unique_id: {} from client: {}, ip list: {}".format(ip_address, unique_id, addr, directory_key))
         except:
             print_("ip_list_server:", traceback.format_exc())
