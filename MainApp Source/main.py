@@ -147,7 +147,6 @@ base_configs = {
         "mode" : "server",
         "host" : "0.0.0.0",
         "port" : 7000,
-        "from warband" : False,
     },
 }
 base_commands = {
