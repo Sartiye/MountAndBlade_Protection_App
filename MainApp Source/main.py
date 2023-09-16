@@ -651,7 +651,7 @@ class Hetzner(Advanced_Rule):
           "direction": "in",
           "port": configs["warband"]["port"],
           "protocol": "udp",
-          "source_ips": list(ip_data.ip_addresses)
+          "source_ips": [ipaddress.IPv4Network(ip_address, strict = False).with_netmask for ip_address in ip_data.ip_addresses]
         }
         print_("Created rule-range with unique id: {}".format(unique_id))
 
@@ -670,7 +670,9 @@ class Hetzner(Advanced_Rule):
         data = {
             "rules" : [rule for unique_id, rule in self.rules.items()],
         }
-        requests.request("POST", commands["hetzner"]["set"].format(firewall_id = self.firewall["id"]), data = json.dumps(data), headers = headers)
+        response = requests.request("POST", commands["hetzner"]["set"].format(firewall_id = self.firewall["id"]), data = json.dumps(data), headers = headers).json()
+        if response["error"]:
+            print_(response["error"])
 
 
 class Rule_Updater(threading.Thread):
