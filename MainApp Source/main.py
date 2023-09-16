@@ -362,7 +362,7 @@ class Event_Handler(FileSystemEventHandler):
     def on_modified(self, event):
         global file_call
         
-        for directory in [directories.allowlist, directories.blacklist]:
+        for directory in [directories.allowlist, directories.blacklist, directories.currentlist]:
             if event.src_path == directory.string():
                 import_ip_list(directory)
                 if not file_call:
@@ -661,7 +661,7 @@ class Hetzner(Advanced_Rule):
                 print_("ERROR! Rule limit for firewalls is reached. Try reducing allowlist size.".format(configs["hetzner"]["firewall"]))
                 return
             data = {
-                "rules" : [rule for unique_id, rule in rules],
+                "rules" : rules,
             }
             response = requests.request("POST", commands["hetzner"]["set"].format(firewall_id = self.firewalls[i]["id"]), data = json.dumps(data), headers = headers).json()
             if "actions" not in response:
@@ -673,9 +673,10 @@ class Hetzner(Advanced_Rule):
 
     def split_rules_for_firewalls(self):
         rule_limit = 5
+        rules_list = list(self.rules.values())
         firewalls = []
-        for i in range(0, len(self.rules), rule_limit):
-            rules = self.rules[i : i + rule_limit]
+        for i in range(0, len(rules_list), rule_limit):
+            rules = rules_list[i : i + rule_limit]
             firewalls.append(rules)
         return firewalls
 
@@ -960,10 +961,8 @@ def ip_list_server():
                 client, addr = server.accept()
                 message = client.recv(1024).decode()
                 client.close()
-                if configs["ip list transmitter"]["from warband"]:
-                    message = message.split(" ")[1][1:].split("%3C")
-                else:
-                    message = message.split("%")
+                message = message.split("%")
+                print(message)
                 while (message):
                     param = message.pop(0)
                     if param in ["add", "remove"]:
@@ -993,6 +992,8 @@ try:
     
     import_ip_list(directories.allowlist)
     import_ip_list(directories.blacklist)
+    clean_file(directories.currentlist)
+    import_ip_list(directories.currentlist)
 
     time.sleep(1)
 
