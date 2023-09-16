@@ -1,13 +1,4 @@
 
-[google cloud.list]
-gcloud compute --project={project} firewall-rules list --filter="name~'^{header}-.*$'"
-
-[google cloud.create]
-gcloud compute --project={project} firewall-rules create {header}-{unique_id} --direction=INGRESS --priority={priority}{network} --action=ALLOW --rules=udp:{port} --source-ranges={ip_addresses}
-
-[google cloud.delete]
-gcloud compute --project={project} firewall-rules delete {header}-{unique_id}
-
 [advanced firewall.list]
 powershell "Get-NetFirewallRule -Description warband | % DisplayName"
 
@@ -17,7 +8,20 @@ netsh advfirewall firewall add rule name={header}-{unique_id} dir=in action=allo
 [advanced firewall.delete]
 netsh advfirewall firewall delete rule name={header}-{unique_id}
 
-[\]
+[google cloud.list]
+gcloud compute --project={project} firewall-rules list --filter="name~'^{header}-.*$'"
+
+[google cloud.create]
+gcloud compute --project={project} firewall-rules create {header}-{unique_id} --direction=INGRESS --priority={priority}{network} --action=ALLOW --rules=udp:{port} --source-ranges={ip_addresses}
+
+[google cloud.delete]
+gcloud compute --project={project} firewall-rules delete {header}-{unique_id}
+
+[hetzner.list]
+https://api.hetzner.cloud/v1/firewalls
+
+[hetzner.set]
+https://api.hetzner.cloud/v1/firewalls/{firewall_id}/actions/set_rules
 
 [cloudflare.ping]
 GET /handlerservers.ashx?type=ping&keys&port={port}&hidden=false HTTP/1.1\r\n

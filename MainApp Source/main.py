@@ -477,6 +477,9 @@ class IP_Data():
         self.update = True
         return ip_address
 
+    def get_unique_id(self):
+        return "-".join([self.unique_id, str(self.index)])
+
 
 class Advanced_Rule(Rule):
     def __init__(self):
@@ -489,7 +492,7 @@ class Advanced_Rule(Rule):
         rules = self.list_rules()
         to_be_deleted = list()
         for rule in reversed(rules):
-            unique_id, index = rule.split("-")[1:]
+            unique_id, index = rule.split("-")[-2:]
             if unique_id not in self.ip_datas:
                 to_be_deleted.append("-".join([unique_id, index]))
                 continue
@@ -498,7 +501,7 @@ class Advanced_Rule(Rule):
                 to_be_deleted.append("-".join([unique_id, index]))
             elif ip_data.index < int(index):
                 if ip_data.present:
-                    to_be_deleted.append("-".join([unique_id, str(ip_data.index)]))
+                    to_be_deleted.append(ip_data.get_unique_id())
                 ip_data.index = int(index)
             ip_data.present = True
         for ip_data_uid in to_be_deleted:
@@ -534,11 +537,11 @@ class Advanced_Rule(Rule):
                 continue
             ip_data.update = False
             if ip_data.present:
-                to_be_deleted.append("-".join([unique_id, str(ip_data.index)]))
+                to_be_deleted.append(ip_data.get_unique_id())
                 ip_data.index = (ip_data.index + 1) % 10
             else:
                 ip_data.present = True
-            self.create_rule(unique_id, ip_data)
+            self.create_rule(ip_data)
             ip_uid_manager.update_unique_id_data(unique_id, ",".join(ip_data.ip_addresses))
         for ip_data_uid in to_be_deleted:
             self.delete_rule(ip_data_uid)
@@ -547,8 +550,8 @@ class Advanced_Rule(Rule):
     def list_rules(self):
         return list()
 
-    def create_rule(self, unique_id, ip_data):
-        print_("Created rule-range with unique id: {}".format("-".join([unique_id, str(ip_data.index)])))
+    def create_rule(self, ip_data):
+        print_("Created rule-range with unique id: {}".format(ip_data.get_unique_id()))
 
     def delete_rule(self, unique_id):
         print_("Deleted rule-range with unique_id: {}".format(unique_id))
@@ -578,11 +581,11 @@ class Google_Cloud(Advanced_Rule):
             stderr = subprocess.PIPE,
         ).decode().split("\n")][1:-1]
         
-    def create_rule(self, unique_id, ip_data):
+    def create_rule(self, ip_data):
         kwargs = {
             "project" : configs["google cloud"]["project"],
             "header" : configs["google cloud"]["header"],
-            "unique_id" : "-".join([unique_id, str(ip_data.index)]),
+            "unique_id" : ip_data.get_unique_id(),
             "priority" : configs["google cloud"]["priority"] + ip_data.index,
             "network" : " --network={}".format(configs["google cloud"]["network"]) if configs["google cloud"]["network"] != "default" else "",
             "port" : configs["warband"]["port"],
@@ -628,22 +631,23 @@ class Hetzner(Advanced_Rule):
         headers = {
             "Authorization": "Bearer {}".format(configs["hetzner"]["api"]),
         }
-        for firewall in requests.request("GET", "https://api.hetzner.cloud/v1/firewalls", headers = headers).json()["firewalls"]:
+        for firewall in requests.request("GET", commands["hetzner"]["list"], headers = headers).json()["firewalls"]:
             if firewall["name"] != configs["hetzner"]["firewall"]:
                 continue
             self.firewall = firewall
             self.rules.clear()
             for rule in self.firewall["rules"]:
-                self.rules[rule["description"].split("-")[1]] = rule
+                self.rules[rule["description"]] = rule
             break
         else:
             print_("ERROR! Hetzner firewall ({}) is not found.".format(configs["hetzner"]["firewall"]))
             return list()
         return [rule["description"] for unique_id, rule in self.rules.items()]
 
-    def create_rule(self, unique_id, ip_data):
+    def create_rule(self, ip_data):
+        unique_id = ip_data.get_unique_id()
         self.rules[unique_id] = {
-          "description": "-".join([configs["hetzner"]["firewall"], unique_id, str(ip_data.index)]),
+          "description": unique_id,
           "direction": "in",
           "port": configs["warband"]["port"],
           "protocol": "udp",
@@ -666,7 +670,7 @@ class Hetzner(Advanced_Rule):
         data = {
             "rules" : [rule for unique_id, rule in self.rules.items()],
         }
-        requests.request("POST", "https://api.hetzner.cloud/v1/firewalls/{}/actions/set_rules".format(self.firewall["id"]), data = json.dumps(data), headers = headers)
+        requests.request("POST", commands["hetzner"]["set"].format(firewall_id = self.firewall["id"]), data = json.dumps(data), headers = headers)
 
 
 class Rule_Updater(threading.Thread):

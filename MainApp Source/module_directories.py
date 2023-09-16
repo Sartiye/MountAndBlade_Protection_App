@@ -8,6 +8,7 @@ directories = Directory_Manager(
     commands = [".data", "commands.txt"],
     allowlist = [".data", "allowlist.txt"],
     blacklist = [".data", "blacklist.txt"],
+    currentlist = [".data", "currentlist.txt"],
     ip_uids = [".data", "ip uids.txt"],
     dumpcap = [".data", "Dumpcap"],
     pcap = [".dumpcap", "{filename}.pcap"],
