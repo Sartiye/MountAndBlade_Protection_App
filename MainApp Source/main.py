@@ -147,17 +147,7 @@ base_configs = {
         "mode" : "server",
         "host" : "0.0.0.0",
         "port" : 7000,
-    },
-    "bannerlord listener" : {
-        "active" : False,
-        "host" : "0.0.0.0",
-        "port" : 7010,
-    },
-    "packet rate limiter" : {
-        "active" : False,
-        "interval" : 120,
-        "limit" : -1,
-        "print" : False,
+        "from warband" : False,
     },
 }
 base_commands = {
@@ -624,23 +614,22 @@ class Hetzner(Advanced_Rule):
         if not check_configs("hetzner", ["api"]):
             self.defined = False
             return
-        self.firewall = None
+        self.firewalls = dict()
         self.rules = dict()
 
     def list_rules(self):
+        self.rules.clear()
         headers = {
             "Authorization": "Bearer {}".format(configs["hetzner"]["api"]),
         }
         for firewall in requests.request("GET", commands["hetzner"]["list"], headers = headers).json()["firewalls"]:
-            if firewall["name"] != configs["hetzner"]["firewall"]:
+            if not firewall["name"].startswith(configs["hetzner"]["firewall"]):
                 continue
-            self.firewall = firewall
-            self.rules.clear()
-            for rule in self.firewall["rules"]:
+            self.firewalls[int(firewall["name"].split("-")[1])] = firewall
+            for rule in firewall["rules"]:
                 self.rules[rule["description"]] = rule
-            break
-        else:
-            print_("ERROR! Hetzner firewall ({}) is not found.".format(configs["hetzner"]["firewall"]))
+        if not self.firewalls:
+            print_("ERROR! No Hetzner Firewall starting with ({}) is not found.".format(configs["hetzner"]["firewall"]))
             return list()
         return [rule["description"] for unique_id, rule in self.rules.items()]
 
@@ -660,21 +649,35 @@ class Hetzner(Advanced_Rule):
         print_("Deleted rule-range with unique_id: {}".format(unique_id))
     
     def refresh_rules(self):
-        if not self.firewall:
+        if not self.firewalls:
             return
         print_("Refreshing Firewall...")
         headers = {
             "Authorization": "Bearer {}".format(configs["hetzner"]["api"]),
             "Content-Type": "application/json",
         }
-        data = {
-            "rules" : [rule for unique_id, rule in self.rules.items()],
-        }
-        response = requests.request("POST", commands["hetzner"]["set"].format(firewall_id = self.firewall["id"]), data = json.dumps(data), headers = headers).json()
-        for action in response["actions"]:
-            if action["error"]:
-                print_(action["error"])
+        for i, rules in enumerate(self.split_rules_for_firewalls()):
+            if i not in self.firewalls:
+                print_("ERROR! Rule limit for firewalls is reached. Try reducing allowlist size.".format(configs["hetzner"]["firewall"]))
+                return
+            data = {
+                "rules" : [rule for unique_id, rule in rules],
+            }
+            response = requests.request("POST", commands["hetzner"]["set"].format(firewall_id = self.firewalls[i]["id"]), data = json.dumps(data), headers = headers).json()
+            if "actions" not in response:
+                print_("Warning! Hetzner response is unexpected: {}".format(response))
+                return
+            for action in response["actions"]:
+                if action["error"]:
+                    print_(action["error"])
 
+    def split_rules_for_firewalls(self):
+        rule_limit = 5
+        firewalls = []
+        for i in range(0, len(self.rules), rule_limit):
+            rules = self.rules[i : i + rule_limit]
+            firewalls.append(rules)
+        return firewalls
 
 class Rule_Updater(threading.Thread):
     def __init__(self, *args, **kwargs):
@@ -955,7 +958,12 @@ def ip_list_server():
             server.listen(5)
             while True:
                 client, addr = server.accept()
-                message = client.recv(1024).decode().split("%")
+                message = client.recv(1024).decode()
+                client.close()
+                if configs["ip list transmitter"]["from warband"]:
+                    message = message.split(" ")[1][1:].split("%3C")
+                else:
+                    message = message.split("%")
                 while (message):
                     param = message.pop(0)
                     if param in ["add", "remove"]:
@@ -966,95 +974,14 @@ def ip_list_server():
                         for ip_address in ip_addresses:
                             unique_id = add_ip_to_directory(directory, ip_address)
                             if unique_id:
-                                print_("Received new ip address {}, unique_id: {} from client: {}, ip list: {}".format(ip_address, unique_id, addr, directory_key))
-                client.close()
+                                print_("Adding ip address {}, unique_id: {} from client: {}, ip list: {}".format(ip_address, unique_id, addr, directory_key))
+                    if param == "remove":
+                        for ip_address in ip_addresses:
+                            if ip_address in directory:
+                                directory.pop(ip_address)
+                                print_("Removing ip address {}, unique_id: {} from client: {}, ip list: {}".format(ip_address, unique_id, addr, directory_key))
         except:
             print_("ip_list_server:", traceback.format_exc())
-
-def bannerlord_listener():
-    while True:
-        try:
-            server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            addr = (configs["bannerlord listener"]["host"], configs["bannerlord listener"]["port"])
-            print_("Listening bannerlord on addr: {addr}".format(addr = addr))
-            server.bind(addr)
-            server.listen(5)
-            while True:
-                client, addr = server.accept()
-                message = client.recv(1024).decode().split("%")
-                print(message)
-                while (message):
-                    param = message.pop(0)
-                    if param in ["add", "remove"]:
-                        directory_key = message.pop(0)
-                        directory = directory_keys[directory_key]
-                        ip_address = message.pop(0)
-                    if param == "add":
-                        unique_id = add_ip_to_directory(directory, ip_address)
-                        if unique_id:
-                            print_("Received new ip address {}, unique_id: {} from client: {}, ip list: {}".format(ip_address, unique_id, addr, directory_key))
-                client.close()
-        except:
-            print_("bannerlord_listener:", traceback.format_exc())
-
-def packet_rate_limiter():
-    try:
-        while configs["IP UIDs"]["clean start"]:
-            time.sleep(1)
-        while True:
-            capture = pyshark.LiveCapture(
-                configs["warband"]["interface"],
-                bpf_filter = configs["dumpcap"]["filter"].format(
-                    host = configs["warband"]["host"],
-                    port = configs["warband"]["port"]
-                ),
-            )
-            print_(
-                "Started rate limiting interface: \"{}\", host: {}, port: {}".format(
-                    configs["warband"]["interface"],
-                    configs["warband"]["host"],
-                    configs["warband"]["port"],
-                )
-            )
-            interval_count = 0
-            source_ips = set()
-            packet_rate_counts = dict()
-            last_interval_time = time.time()
-            for packet in capture.sniff_continuously():
-                source_ip = packet.ip.src
-                if source_ip == configs["warband"]["host"]: continue
-                if time.time() - last_interval_time >= configs["packet rate limiter"]["interval"]:
-                    if configs["packet rate limiter"]["print"]:
-                        print_([item for item in sorted(packet_rate_counts.items(), key = lambda x: x[1], reverse = True)][:4])
-                    interval_count += 1
-                    if interval_count > 5:
-                        break
-                    packet_rate_counts.clear()
-                    source_ips.clear()
-                    last_interval_time = time.time()
-                if not source_ip in source_ips:
-                    source_ips.add(source_ip)
-                    packet_rate_counts[source_ip] = 0
-                if packet_rate_counts[source_ip] == -1: continue
-                packet_rate_counts[source_ip] += 1
-                if configs["packet rate limiter"]["limit"] != -1 and packet_rate_counts[source_ip] >= configs["packet rate limiter"]["limit"]:
-                    print_("{} has passed the rate limit. interval: {}, limit: {}".format(source_ip, configs["packet rate limiter"]["interval"], configs["packet rate limiter"]["limit"]))
-                    try:
-                        if configs["ip list transmitter"]["active"] and configs["ip list transmitter"]["mode"] == "client":
-                            added_ip = source_ip
-                            addr = (configs["ip_list_transmitter"]["host"], configs["ip_list_transmitter"]["port"])
-                            print_("Sending new ip addresses {} to server: {}, ip list: {}".format(added_ip, addr, directories.blacklist.key))
-                            server = socket.socket()
-                            server.connect(addr)
-                            server.send("add%{}%{}".format(directories.blacklist.key, added_ip).encode())
-                            server.close()
-                    except:
-                        print_("ip_list_client:", traceback.format_exc())
-                    add_ip_to_directory(directories.blacklist, source_ip)
-                    packet_rate_counts[source_ip] = -1
-    except:
-        print_("packet rate limiter:", traceback.format_exc())
 
 try:
     print_("Loading...")
@@ -1102,13 +1029,6 @@ try:
     if configs["ip list transmitter"]["active"] and configs["ip list transmitter"]["mode"] == "server":
         threading.Thread(target = ip_list_server).start()
         time.sleep(1)
-
-    if configs["bannerlord listener"]["active"]:
-        threading.Thread(target = bannerlord_listener).start()
-        time.sleep(1)
-
-    if configs["packet rate limiter"]["active"]:
-        threading.Thread(target = packet_rate_limiter).start()
 
     rule_updater = Rule_Updater()
     rule_updater.update = True
