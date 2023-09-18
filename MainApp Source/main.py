@@ -284,6 +284,8 @@ def import_ip_list(directory):
             if check_ip_address(directory, i, ip_address):
                 continue
             ip_list.append(ip_address)
+        if directory.key == "allowlist" and configs["IP UIDs"]["allowlist size"] > 0:
+            ip_list = ip_list[max(len(ip_list) - configs["IP UIDs"]["allowlist size"], 0):]
 
 
 class IP_UID_Manager():
@@ -715,8 +717,6 @@ class Rule_Updater(threading.Thread):
                 self.update = False
 
                 with ip_lists_lock:
-                    if configs["IP UIDs"]["allowlist size"] > 0:
-                        ip_lists["allowlist"] = ip_lists["allowlist"][max(len(ip_lists["allowlist"]) - configs["IP UIDs"]["allowlist size"], 0):]
                     new_ip_list = set(ip_lists["allowlist"]).union(set(ip_lists["currentlist"])).difference(set(ip_lists["blacklist"]))
                 
                 if not self.force and self.ip_list == new_ip_list:
