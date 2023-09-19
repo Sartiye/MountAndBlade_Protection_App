@@ -36,10 +36,12 @@ def message_sender():
             messages.clear()
         print("Sending the current message: {}".format([message.split("%") for message in cur_messages]))
         try:
-          server = socket.socket()
-          server.connect(protection_addr)
-          server.send("%".join(cur_messages).encode())
-          server.close()
+            while True:
+                server = socket.socket()
+                server.connect(protection_addr)
+                server.send("%".join(cur_messages).encode())
+                server.close()
+                break
         except:
           print("Couldn't transfer the message to protection server:", traceback.format_exc())
     
