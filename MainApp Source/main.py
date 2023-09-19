@@ -266,55 +266,56 @@ class IP_List():
     def __init__(self, directory, size = -1):
         self.directory = directory
         self.size = size
-        self.ipset = set()
+        self.ip_list = list()
         self.lock = threading.Lock()
         
         self._import()
 
-    def set_ipset(self, ipset):
-        if ipset == self.ipset:
+    def set_ip_list(self, ip_list):
+        if ip_list == self.ip_list:
             return
         if self.size > 0:
-            ip_list = list(ipset)
-            ipset = set(ip_list[max(len(ip_list) - self.size, 0):])
+            ip_list = ip_list[max(len(ip_list) - self.size, 0):]
         with self.lock:
-            self.ipset = ipset
+            self.ip_list = ip_list
             Event_Handler.file_call = True
             with open(self.directory, mode = "w") as file:
-                file.write("\n".join(self.ipset))
+                file.write("\n".join(self.ip_list))
 
-    def get_ipset(self):
+    def get_ip_list(self):
         with self.lock:
-            return self.ipset.copy()
+            return self.ip_list.copy()
 
     def _import(self):
         check_file(self.directory)
         with open(self.directory, mode = "r", encoding = "utf-8") as file:
             data = file.read()
         if not data:
-            self.set_ipset(set())
+            self.set_ip_list(list())
             return
         if configs["IP UIDs"]["clean start"]:
             clean_file(self.directory)
-            self.set_ipset(set())
+            self.set_ip_list(list())
             return
-        ipset = set()
+        ip_list = list()
         ip_addresses = data.split("\n")
         for i, ip_address in enumerate(ip_addresses, start = 1):
             ip_address = ip_address.split("#")[0].strip(" ").strip("\t")
             if not ip_address:
                 continue
-            if check_ip_address(directory, i, ip_address):
+            if check_ip_address(self.directory, i, ip_address):
                 continue
-            ipset.add(clamp_ip_address(ip_address))
-        self.set_ipset(ipset)
+            if ip_address in ip_list:
+                continue
+            ip_list.append(clamp_ip_address(ip_address))
+        self.set_ip_list(ip_list)
 
     def add_ip(self, ip_address):
-        if ip_address in self.ipset:
+        if ip_address in self.ip_list:
             return False
-        ipset = self.ipset.copy()
-        ipset.add(ip_address)
-        self.set_ipset(ipset)
+        ip_list = self.ip_list.copy()
+        ip_list.append(ip_address)
+        self.set_ip_list(ip_list)
         if configs["ip list transmitter"]["active"] and configs["ip list transmitter"]["mode"] == "client":
             try:
                 addr = (configs["ip list transmitter"]["host"], configs["ip list transmitter"]["port"])
@@ -328,11 +329,11 @@ class IP_List():
         return ip_uid_manager.get_unique_id(ip_address)
 
     def remove_ip(self, ip_address):
-        if ip_address not in self.ipset:
+        if ip_address not in self.ip_list:
             return False
-        ipset = self.ipset.copy()
-        ipset.remove(ip_address)
-        self.set_ipset(ipset)
+        ip_list = self.ip_list.copy()
+        ip_list.remove(ip_address)
+        self.set_ip_list(ip_list)
         if configs["ip list transmitter"]["active"] and configs["ip list transmitter"]["mode"] == "client":
             try:
                 addr = (configs["ip list transmitter"]["host"], configs["ip list transmitter"]["port"])
@@ -346,7 +347,7 @@ class IP_List():
         return ip_uid_manager.get_unique_id(ip_address)
 
     def clear(self):
-        self.set_ipset(set())
+        self.set_ip_list(list())
         if configs["ip list transmitter"]["active"] and configs["ip list transmitter"]["mode"] == "client":
             try:
                 addr = (configs["ip list transmitter"]["host"], configs["ip list transmitter"]["port"])
@@ -433,10 +434,10 @@ class Event_Handler(FileSystemEventHandler):
         FileSystemEventHandler.__init__(self)
         
     def on_modified(self, event):
-        for ip_list in ip_lists:
+        for directory_key, ip_list in ip_lists.items():
             if event.src_path == ip_list.directory.string():
                 if not Event_Handler.file_call:
-                    print_("Data change detected on file: {}".format(directory.basename()))
+                    print_("Data change detected on file: {}".format(ip_list.directory.basename()))
                     ip_list._import()
                 Event_Handler.file_call = False
                 rule_updater.update = True
@@ -787,7 +788,7 @@ class Rule_Updater(threading.Thread):
                     time.sleep(1); continue
                 self.update = False
 
-                new_ip_list = ip_lists[directories.allowlist.key].get_ipset().union(ip_lists[directories.currentlist.key].get_ipset()).difference(ip_lists[directories.blacklist.key].get_ipset())
+                new_ip_list = set(ip_lists[directories.allowlist.key].get_ip_list()).union(set(ip_lists[directories.currentlist.key].get_ip_list())).difference(set(ip_lists[directories.blacklist.key].get_ip_list()))
                 
                 if not self.force and self.ip_list == new_ip_list:
                     time.sleep(1); continue
