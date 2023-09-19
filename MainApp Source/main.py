@@ -288,8 +288,9 @@ class IP_List():
 
     def _import(self):
         check_file(self.directory)
-        with open(self.directory, mode = "r", encoding = "utf-8") as file:
-            data = file.read()
+        with self.lock:
+            with open(self.directory, mode = "r", encoding = "utf-8") as file:
+                data = file.read()
         if not data:
             self.set_ip_list(list())
             return

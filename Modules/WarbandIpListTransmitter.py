@@ -1,6 +1,7 @@
 import socket
 import traceback
 import threading
+import time
 
 def serialize(*args):
     return ("{}|" * len(args)).format(*args)
@@ -11,29 +12,33 @@ def send_message_warband(client, *message):
 
 protection_addr = ("145.239.234.13", 7000)
 warband_addr = ("127.0.0.1", 80)
-messages = str()
+messages = list()
 messages_lock = threading.Lock()
 
 while True:
     try:
         server = socket.socket()
         server.connect(protection_addr)
-        server.send("clear%currentlist").encode())
+        server.send("clear%currentlist".encode())
         server.close()
         print("Cleared currentlist of server.")
+        break
     except:
         print("Couldn't connect to protection server:", traceback.format_exc())
 
 def message_sender():
     while True:
+        if not messages:
+            time.sleep(1)
+            continue
         with messages_lock:
-            cur_message = messages
-            messages = str()
-        print("Sending the current message: {}".format(message.split("%")))
+            cur_messages = messages.copy()
+            messages.clear()
+        print("Sending the current message: {}".format([message.split("%") for message in cur_messages]))
         try:
           server = socket.socket()
           server.connect(protection_addr)
-          server.send(cur_message.encode())
+          server.send("%".join(cur_messages).encode())
           server.close()
         except:
           print("Couldn't transfer the message to protection server:", traceback.format_exc())
@@ -55,7 +60,7 @@ def warband_listener():
                 message = message.split(" ")[1][1:].split("%3C")
                 print("Received new ip list message: {}".format(message))
                 with messages_lock:
-                    messages += "%".join(message)
+                    messages.append("%".join(message))
         except:
           print("Something went wrong on warband_listener:", traceback.format_exc())
     
