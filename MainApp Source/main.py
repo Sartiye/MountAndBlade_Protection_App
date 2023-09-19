@@ -40,7 +40,6 @@ except RuntimeError:
     print_("Couldn't start the program as admin.")
 
 eval_string = ""
-file_call = False
         
 def check_file(directory):
     try:
@@ -86,6 +85,9 @@ def get_random_string(length):
     for i in range(length):
         random_list.append(random.choice(string_lib.ascii_lowercase + string_lib.digits))
     return "".join(random_list)
+
+def clamp_ip_address(ip_address):
+    return ipaddress.IPv4Network(ip_address, strict = False).with_netmask
 
 base_host = socket.gethostbyname(socket.gethostname())
 base_configs = {
@@ -173,12 +175,6 @@ base_commands = {
     },
 }
 
-directory_keys = {"allowlist": directories.allowlist, "blacklist": directories.blacklist, "currentlist": directories.currentlist}
-ip_lists = {"allowlist": list(), "blacklist": list(), "currentlist": list()}
-ip_lists_lock = threading.Lock()
-configs = base_configs.copy()
-commands = base_commands.copy()
-rule_list = list()
 
 def import_configs(directory):
     global configs
@@ -256,6 +252,7 @@ def import_commands(directory):
         else:
             import_error(directory, "command", i, "A command must be defined.")
 
+
 def check_ip_address(directory, i, ip_address):
     try:
         ipaddress.IPv4Network(ip_address, strict = False)
@@ -264,18 +261,44 @@ def check_ip_address(directory, i, ip_address):
         import_error(directory, "ip address", i, exception)
         return True
 
-def import_ip_list(directory):
-    with ip_lists_lock:
-        ip_list = ip_lists[directory.key]
-        ip_list.clear()
-        check_file(directory)
-        with open(directory, mode = "r", encoding = "utf-8") as file:
+
+class IP_List():
+    def __init__(self, directory, size = -1):
+        self.directory = directory
+        self.size = size
+        self.ipset = set()
+        self.lock = threading.Lock()
+        
+        self._import()
+
+    def set_ipset(self, ipset):
+        if ipset == self.ipset:
+            return
+        if self.size > 0:
+            ip_list = list(ipset)
+            ipset = set(ip_list[max(len(ip_list) - self.size, 0):])
+        with self.lock:
+            self.ipset = ipset
+            Event_Handler.file_call = True
+            with open(self.directory, mode = "w") as file:
+                file.write("\n".join(self.ipset))
+
+    def get_ipset(self):
+        with self.lock:
+            return self.ipset.copy()
+
+    def _import(self):
+        check_file(self.directory)
+        with open(self.directory, mode = "r", encoding = "utf-8") as file:
             data = file.read()
         if not data:
+            self.set_ipset(set())
             return
         if configs["IP UIDs"]["clean start"]:
-            clean_file(directory)
+            clean_file(self.directory)
+            self.set_ipset(set())
             return
+        ipset = set()
         ip_addresses = data.split("\n")
         for i, ip_address in enumerate(ip_addresses, start = 1):
             ip_address = ip_address.split("#")[0].strip(" ").strip("\t")
@@ -283,9 +306,57 @@ def import_ip_list(directory):
                 continue
             if check_ip_address(directory, i, ip_address):
                 continue
-            ip_list.append(ip_address)
-        if directory.key == "allowlist" and configs["IP UIDs"]["allowlist size"] > 0:
-            ip_list = ip_list[max(len(ip_list) - configs["IP UIDs"]["allowlist size"], 0):]
+            ipset.add(clamp_ip_address(ip_address))
+        self.set_ipset(ipset)
+
+    def add_ip(self, ip_address):
+        if ip_address in self.ipset:
+            return False
+        ipset = self.ipset.copy()
+        ipset.add(ip_address)
+        self.set_ipset(ipset)
+        if configs["ip list transmitter"]["active"] and configs["ip list transmitter"]["mode"] == "client":
+            try:
+                addr = (configs["ip list transmitter"]["host"], configs["ip list transmitter"]["port"])
+                print_("Sending new ip address {} to ip list: {} of server: {}".format(ip_address, self.directory.key, addr))
+                server = socket.socket()
+                server.connect(addr)
+                server.send("add%{}%{}".format(self.directory.key, ip_address).encode())
+                server.close()
+            except:
+                print_("ip list transmitter:", traceback.format_exc())
+        return ip_uid_manager.get_unique_id(ip_address)
+
+    def remove_ip(self, ip_address):
+        if ip_address not in self.ipset:
+            return False
+        ipset = self.ipset.copy()
+        ipset.remove(ip_address)
+        self.set_ipset(ipset)
+        if configs["ip list transmitter"]["active"] and configs["ip list transmitter"]["mode"] == "client":
+            try:
+                addr = (configs["ip list transmitter"]["host"], configs["ip list transmitter"]["port"])
+                print_("Removing current ip address {} from ip list: {} of server: {}".format(ip_address, self.directory.key, addr))
+                server = socket.socket()
+                server.connect(addr)
+                server.send("remove%{}%{}".format(self.directory.key, ip_address).encode())
+                server.close()
+            except:
+                print_("ip list transmitter:", traceback.format_exc())
+        return ip_uid_manager.get_unique_id(ip_address)
+
+    def clear(self):
+        self.set_ipset(set())
+        if configs["ip list transmitter"]["active"] and configs["ip list transmitter"]["mode"] == "client":
+            try:
+                addr = (configs["ip list transmitter"]["host"], configs["ip list transmitter"]["port"])
+                print_("Clearing ip list: {} of server: {}".format(self.directory.key, addr))
+                server = socket.socket()
+                server.connect(addr)
+                server.send("clear%{}".format(self.directory.key).encode())
+                server.close()
+            except:
+                print_("ip list transmitter:", traceback.format_exc())
 
 
 class IP_UID_Manager():
@@ -357,18 +428,17 @@ class IP_UID_Manager():
 
 
 class Event_Handler(FileSystemEventHandler):
+    file_call = False
     def __init__(self):
         FileSystemEventHandler.__init__(self)
         
     def on_modified(self, event):
-        global file_call
-        
-        for directory in [directories.allowlist, directories.blacklist, directories.currentlist]:
-            if event.src_path == directory.string():
-                import_ip_list(directory)
-                if not file_call:
+        for ip_list in ip_lists:
+            if event.src_path == ip_list.directory.string():
+                if not Event_Handler.file_call:
                     print_("Data change detected on file: {}".format(directory.basename()))
-                file_call = False
+                    ip_list._import()
+                Event_Handler.file_call = False
                 rule_updater.update = True
                 break
 
@@ -641,7 +711,7 @@ class Hetzner(Advanced_Rule):
           "direction": "in",
           "port": configs["warband"]["port"],
           "protocol": "udp",
-          "source_ips": [ipaddress.IPv4Network(ip_address, strict = False).with_netmask for ip_address in ip_data.ip_addresses]
+          "source_ips": ip_data.ip_addresses
         }
         print_("Created rule-range with unique id: {}".format(unique_id))
 
@@ -682,9 +752,10 @@ class Hetzner(Advanced_Rule):
         return firewalls
 
 class Rule_Updater(threading.Thread):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, rule_list, *args, **kwargs):
         threading.Thread.__init__(self, *args, **kwargs)
 
+        self.rule_list = rule_list
         self.update = False
         self.force = False
         self.ip_list = set()
@@ -692,21 +763,21 @@ class Rule_Updater(threading.Thread):
 
     def list(self):
         self.unique_ids.clear()
-        for rule in rule_list:
+        for rule in self.rule_list:
             self.unique_ids.update(rule.list())
         
     def create(self, unique_id, ip_address):
-        for rule in rule_list:
+        for rule in self.rule_list:
             rule.create(unique_id, ip_address)
         self.unique_ids.add(unique_id)
         
     def delete(self, unique_id):
-        for rule in rule_list:
+        for rule in self.rule_list:
             rule.delete(unique_id)
         self.unique_ids.remove(unique_id)
 
     def refresh(self):
-        for rule in rule_list:
+        for rule in self.rule_list:
             rule.refresh()
 
     def run(self):
@@ -716,8 +787,7 @@ class Rule_Updater(threading.Thread):
                     time.sleep(1); continue
                 self.update = False
 
-                with ip_lists_lock:
-                    new_ip_list = set(ip_lists["allowlist"]).union(set(ip_lists["currentlist"])).difference(set(ip_lists["blacklist"]))
+                new_ip_list = ip_lists[directories.allowlist.key].get_ipset().union(ip_lists[directories.currentlist.key].get_ipset()).difference(ip_lists[directories.blacklist.key].get_ipset())
                 
                 if not self.force and self.ip_list == new_ip_list:
                     time.sleep(1); continue
@@ -774,38 +844,18 @@ def pyshark_listener():
     except:
         print_("pyshark listener:", traceback.format_exc())
 
-def add_ip_to_directory(directory, ip_address):
-    global file_call
-    ip_list = ip_lists[directory.key]
-    if ip_address in ip_list:
-        return False
-    ip_list.append(ip_address)
-    file_call = True
-    append_new_line(directory, ip_address)
-    unique_id = ip_uid_manager.get_unique_id(ip_address)
-    return unique_id
-
 def pyshark_verifier():
+    ip_list = ip_lists[directories.allowlist.key]
     try:
         while True:
             time.sleep(1)
             copy_verified_ip_addresses = verified_ip_addresses.copy()
             verified_ip_addresses.clear()
             for source_ip in copy_verified_ip_addresses:
-                unique_id = add_ip_to_directory(directories.allowlist, source_ip)
+                ip_address = clamp_ip_address(source_ip)
+                unique_id = ip_list.add_ip(ip_address)
                 if unique_id:
-                    print_("Verified new ip address: {}, unique_id: {}".format(source_ip, unique_id))
-                    try:
-                        if configs["ip list transmitter"]["active"] and configs["ip list transmitter"]["mode"] == "client":
-                            added_ip = source_ip
-                            addr = (configs["ip list transmitter"]["host"], configs["ip list transmitter"]["port"])
-                            print_("Sending new ip addresses {} to server: {}, ip list: {}".format(source_ip, addr, directories.allowlist.key))
-                            server = socket.socket()
-                            server.connect(addr)
-                            server.send("add%{}%{}".format(directories.allowlist.key, source_ip).encode())
-                            server.close()
-                    except:
-                        print_("ip list transmitter:", traceback.format_exc())
+                    print_("Verified new ip address: {}, unique_id: {}".format(ip_address, unique_id))
     except:
         print_("pyshark verifier:", traceback.format_exc())
 
@@ -961,27 +1011,26 @@ def ip_list_server():
                 message = client.recv(1024).decode()
                 client.close()
                 message = message.split("%")
-                print(message)
+                print_("Received new ip list message: {}".format(message))
                 while (message):
                     param = message.pop(0)
+                    directory_key = message.pop(0)
+                    ip_list = ip_lists[directory_key]
                     if param in ["add", "remove"]:
-                        directory_key = message.pop(0)
-                        directory = directory_keys[directory_key]
-                        ip_list = ip_lists[directory_key]
-                        ip_addresses = message.pop(0).split("&")
+                        ip_addresses = [clamp_ip_address(ip_address) for ip_address in message.pop(0).split("&")]
                     if param == "add":
                         for ip_address in ip_addresses:
-                            unique_id = add_ip_to_directory(directory, ip_address)
+                            unique_id = ip_list.add_ip(ip_address)
                             if unique_id:
-                                print_("Adding ip address {}, unique_id: {} from client: {}, ip list: {}".format(ip_address, unique_id, addr, directory_key))
+                                print_("Added new ip address {}, unique_id: {} to ip list: {} by client: {}".format(ip_address, unique_id, directory_key, addr))
                     elif param == "remove":
                         for ip_address in ip_addresses:
-                            if ip_address in ip_list:
-                                with ip_lists_lock:
-                                    ipset = set(ip_list)
-                                    ipset.remove(ip_address)
-                                    ip_list = list(ipset)
-                                print_("Removing ip address {}, unique_id: {} from client: {}, ip list: {}".format(ip_address, unique_id, addr, directory_key))
+                            unique_id = ip_list.remove_ip(ip_address)
+                            if unique_id:
+                                print_("Removed current ip address {}, unique_id: {} from ip list: {} by client: {}".format(ip_address, unique_id, directory_key, addr))
+                    elif param == "clear":
+                        ip_list.clear()
+                        print_("Cleared ip list: {} of client: {}".format(directory_key, addr))
         except:
             print_("ip_list_server:", traceback.format_exc())
 
@@ -993,16 +1042,18 @@ try:
     if configs["IP UIDs"]["clean start"]:
         print_("Initaiting a clean start.")
     
-    import_ip_list(directories.allowlist)
-    import_ip_list(directories.blacklist)
-    clean_file(directories.currentlist)
-    import_ip_list(directories.currentlist)
+    ip_lists = {
+        directories.allowlist.key: IP_List(directories.allowlist, configs["IP UIDs"]["allowlist size"]),
+        directories.blacklist.key: IP_List(directories.blacklist),
+        directories.currentlist.key: IP_List(directories.currentlist)
+    }
 
     time.sleep(1)
 
     ip_uid_manager = IP_UID_Manager(directories.ip_uids)
     ip_uid_manager.import_directory()
 
+    rule_list = list()
     if configs["advanced firewall"]["active"]:
         rule = Advanced_Firewall()
         if rule.defined:
@@ -1034,7 +1085,7 @@ try:
         threading.Thread(target = ip_list_server).start()
         time.sleep(1)
 
-    rule_updater = Rule_Updater()
+    rule_updater = Rule_Updater(rule_list)
     rule_updater.update = True
     rule_updater.force = True
     rule_updater.start()

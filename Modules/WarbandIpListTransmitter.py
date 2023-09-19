@@ -1,0 +1,64 @@
+import socket
+import traceback
+import threading
+
+def serialize(*args):
+    return ("{}|" * len(args)).format(*args)
+
+def send_message_warband(client, *message):
+    text = "HTTP/1.1 200 OK\r\nContent-Lenght: {}\r\n\r\n{}\r\n".format(128, serialize(*message))
+    client.send(text.encode())
+
+protection_addr = ("145.239.234.13", 7000)
+warband_addr = ("127.0.0.1", 80)
+messages = str()
+messages_lock = threading.Lock()
+
+while True:
+    try:
+        server = socket.socket()
+        server.connect(protection_addr)
+        server.send("clear%currentlist").encode())
+        server.close()
+        print("Cleared currentlist of server.")
+    except:
+        print("Couldn't connect to protection server:", traceback.format_exc())
+
+def message_sender():
+    while True:
+        with messages_lock:
+            cur_message = messages
+            messages = str()
+        print("Sending the current message: {}".format(message.split("%")))
+        try:
+          server = socket.socket()
+          server.connect(protection_addr)
+          server.send(cur_message.encode())
+          server.close()
+        except:
+          print("Couldn't transfer the message to protection server:", traceback.format_exc())
+    
+def warband_listener():
+    while True:
+        try:
+            server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            server.bind(warband_addr)
+            server.listen(5)
+            print("Listening warband.")
+
+            while True:
+                client, addr = server.accept()
+                message = client.recv(1024).decode()
+                send_message_warband(client, "0")
+                client.close()
+                message = message.split(" ")[1][1:].split("%3C")
+                print("Received new ip list message: {}".format(message))
+                with messages_lock:
+                    messages += "%".join(message)
+        except:
+          print("Something went wrong on warband_listener:", traceback.format_exc())
+    
+threading.Thread(target = message_sender).start()
+threading.Thread(target = warband_listener).start()
+      
