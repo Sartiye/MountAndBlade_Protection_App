@@ -742,7 +742,7 @@ class Hetzner(Advanced_Rule):
                     print_(action["error"])
 
     def get_rules_per_firewall(self):
-        rules_per_firewall = [list() * len(self.firewalls)]
+        rules_per_firewall = [list() for i in range(len(self.firewalls))]
         for i, rule in enumerate(list(self.rules.values())):
             rules_per_firewall[i % len(self.firewalls)].append(rule)
             if len(rules_per_firewall[i % len(self.firewalls)]) > 5:
