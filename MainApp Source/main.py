@@ -729,10 +729,7 @@ class Hetzner(Advanced_Rule):
             "Authorization": "Bearer {}".format(configs["hetzner"]["api"]),
             "Content-Type": "application/json",
         }
-        for i, rules in enumerate(self.split_rules_for_firewalls()):
-            if i not in self.firewalls:
-                print_("ERROR! Rule limit for firewalls is reached. Try reducing allowlist size.".format(configs["hetzner"]["firewall"]))
-                return
+        for i, rules in enumerate(self.get_rules_per_firewall()):
             data = {
                 "rules" : rules,
             }
@@ -744,14 +741,13 @@ class Hetzner(Advanced_Rule):
                 if action["error"]:
                     print_(action["error"])
 
-    def split_rules_for_firewalls(self):
-        rule_limit = 5
-        rules_list = list(self.rules.values())
-        firewalls = []
-        for i in range(0, len(rules_list), rule_limit):
-            rules = rules_list[i : i + rule_limit]
-            firewalls.append(rules)
-        return firewalls
+    def get_rules_per_firewall(self):
+        rules_per_firewall = [list() * len(self.firewalls)]
+        for i, rule in enumerate(list(self.rules.values())):
+            rules_per_firewall[i % len(self.firewalls)].append(rule)
+            if len(rules_per_firewall[i % len(self.firewalls)]) > 5:
+                print_("ERROR! Rule limit for firewalls is reached. Try reducing allowlist size.")
+        return rules_per_firewall
 
 class Rule_Updater(threading.Thread):
     def __init__(self, rule_list, *args, **kwargs):
