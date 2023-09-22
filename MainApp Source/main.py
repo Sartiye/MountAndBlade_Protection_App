@@ -604,7 +604,8 @@ class Advanced_Rule(Rule):
                 ip_data.index = (ip_data.index + 1) % 10
             else:
                 ip_data.present = True
-            self.create_rule(ip_data)
+            if ip_data.ip_addresses:
+                self.create_rule(ip_data)
             ip_uid_manager.update_unique_id_data(unique_id, ",".join(ip_data.ip_addresses))
         for ip_data_uid in to_be_deleted:
             self.delete_rule(ip_data_uid)
