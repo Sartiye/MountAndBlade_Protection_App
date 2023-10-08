@@ -655,7 +655,7 @@ class Google_Cloud(Advanced_Rule):
             "priority" : configs["google cloud"]["priority"] + ip_data.index,
             "network" : " --network={}".format(configs["google cloud"]["network"]) if configs["google cloud"]["network"] != "default" else "",
             "port" : configs["warband"]["port"],
-            "ip_addresses" : ",".join([str(ipaddress.ip_address(ip_address, strict = False)) for ip_address in ip_data.ip_addresses]),
+            "ip_addresses" : ",".join([str(ipaddress.IPv4Network(ip_address, strict = False)) for ip_address in ip_data.ip_addresses]),
         }
         subprocess.check_call(
             commands["google cloud"]["create"].format(**kwargs),
