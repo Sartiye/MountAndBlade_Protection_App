@@ -263,9 +263,10 @@ def check_ip_address(directory, i, ip_address):
 
 
 class IP_List():
-    def __init__(self, directory, size = -1):
+    def __init__(self, directory, size = -1, remote_controlled = False):
         self.directory = directory
         self.size = size
+        self.is_remote = remote_controlled
         self.ip_list = list()
         self.lock = threading.Lock()
         
@@ -294,7 +295,7 @@ class IP_List():
         if not data:
             self.set_ip_list(list())
             return
-        if configs["IP UIDs"]["clean start"]:
+        if configs["IP UIDs"]["clean start"] and not self.is_remote:
             clean_file(self.directory)
             self.set_ip_list(list())
             return
@@ -391,10 +392,11 @@ class IP_UID_Manager():
             for ip_address in ip_addresses:
                 if check_ip_address(self.directory, i, ip_address):
                     break
-            self.ip_uids[ip_data] = unique_id
-            self.uids.add(unique_id)
-            if len(ip_addresses) > 1:
-                self.ip_datas[unique_id] = ip_addresses
+            else:
+                self.ip_uids[ip_data] = unique_id
+                self.uids.add(unique_id)
+                if len(ip_addresses) > 1:
+                    self.ip_datas[unique_id] = ip_addresses
         for i in range(len(self.uids)):
             if not str(self.uid_count) in self.uids:
                 break
@@ -1042,9 +1044,9 @@ try:
         print_("Initaiting a clean start.")
     
     ip_lists = {
-        directories.allowlist.key: IP_List(directories.allowlist, configs["IP UIDs"]["allowlist size"]),
+        directories.allowlist.key: IP_List(directories.allowlist, size = configs["IP UIDs"]["allowlist size"]),
         directories.blacklist.key: IP_List(directories.blacklist),
-        directories.currentlist.key: IP_List(directories.currentlist)
+        directories.currentlist.key: IP_List(directories.currentlist, remote_controlled = configs["ip list transmitter"]["active"] and configs["ip list transmitter"]["mode"] == "server")
     }
 
     time.sleep(1)
