@@ -101,6 +101,7 @@ base_configs = {
         "randomize" : False,
         "always list" : False,
         "allowlist size" : -1,
+        "rule updater delay" : 0,
     },
     "advanced firewall" : {
         "active" : False,
@@ -812,6 +813,8 @@ class Rule_Updater(threading.Thread):
                 self.refresh()
                 configs["IP UIDs"]["clean start"] = False
                 print_("Done!")
+                if configs["IP UIDs"]["rule updater delay"]:
+                    time.sleep(configs["IP UIDs"]["rule updater delay"])
             except:
                 print_("rule updater:", traceback.format_exc())
                 self.update = True
