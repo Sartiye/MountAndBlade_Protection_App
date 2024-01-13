@@ -12,6 +12,7 @@ import pyshark
 import ipaddress
 import requests
 import json
+import itertools
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
@@ -86,8 +87,11 @@ def get_random_string(length):
         random_list.append(random.choice(string_lib.ascii_lowercase + string_lib.digits))
     return "".join(random_list)
 
-def clamp_ip_address(ip_address):
-    return ipaddress.IPv4Network(ip_address, strict = False).with_netmask
+def send_message(addr, message):
+    server = socket.socket()
+    server.connect(addr)
+    server.send(message.encode())
+    server.close()
 
 base_host = socket.gethostbyname(socket.gethostname())
 base_configs = {
@@ -149,7 +153,7 @@ base_configs = {
         "active" : False,
         "mode" : "server",
         "host" : "0.0.0.0",
-        "port" : 7000,
+        "port" : 7010,
     },
 }
 base_commands = {
@@ -254,17 +258,8 @@ def import_commands(directory):
             import_error(directory, "command", i, "A command must be defined.")
 
 
-def check_ip_address(directory, i, ip_address):
-    try:
-        ipaddress.IPv4Network(ip_address, strict = False)
-        return False
-    except (ipaddress.AddressValueError, ipaddress.NetmaskValueError) as exception:
-        import_error(directory, "ip address", i, exception)
-        return True
-
-
 class IP_List():
-    def __init__(self, directory, size = -1, remote_controlled = False):
+    def __init__(self, directory, size = None, remote_controlled = False):
         self.directory = directory
         self.size = size
         self.is_remote = remote_controlled
@@ -276,13 +271,13 @@ class IP_List():
     def set_ip_list(self, ip_list):
         if ip_list == self.ip_list:
             return
-        if self.size > 0:
-            ip_list = ip_list[max(len(ip_list) - self.size, 0):]
+        if self.size != None:
+            ip_list = itertools.islice(ip_list, max(len(ip_list) - self.size, 0), None)
         with self.lock:
             self.ip_list = ip_list
             Event_Handler.file_call = True
             with open(self.directory, mode = "w") as file:
-                file.write("\n".join(self.ip_list))
+                file.write("\n".join([format(ip_address) for ip_address in self.ip_list]))
 
     def get_ip_list(self):
         with self.lock:
@@ -303,14 +298,14 @@ class IP_List():
         ip_list = list()
         ip_addresses = data.split("\n")
         for i, ip_address in enumerate(ip_addresses, start = 1):
-            ip_address = ip_address.split("#")[0].strip(" ").strip("\t")
-            if not ip_address:
-                continue
-            if check_ip_address(self.directory, i, ip_address):
+            try:
+                ip_address = ipaddress.ip_address(ip_address.split("#")[0].strip(" ").strip("\t"))
+            except ipaddress.AddressValueError as exception:
+                import_error(self.directory, "ip address", i, exception)
                 continue
             if ip_address in ip_list:
                 continue
-            ip_list.append(clamp_ip_address(ip_address))
+            ip_list.append(ip_address)
         self.set_ip_list(ip_list)
 
     def add_ip(self, ip_address):
@@ -319,17 +314,8 @@ class IP_List():
         ip_list = self.ip_list.copy()
         ip_list.append(ip_address)
         self.set_ip_list(ip_list)
-        if configs["ip list transmitter"]["active"] and configs["ip list transmitter"]["mode"] == "client":
-            try:
-                addr = (configs["ip list transmitter"]["host"], configs["ip list transmitter"]["port"])
-                print_("Sending new ip address {} to ip list: {} of server: {}".format(ip_address, self.directory.key, addr))
-                server = socket.socket()
-                server.connect(addr)
-                server.send("add%{}%{}".format(self.directory.key, ip_address).encode())
-                server.close()
-            except:
-                print_("ip list transmitter:", traceback.format_exc())
-        return ip_uid_manager.get_unique_id(ip_address)
+        ip_list_sync("add%{}%{}".format(self.directory.key, ip_address), "Sending new ip address {} to ip list: {}.".format(ip_address, self.directory.key))
+        return True
 
     def remove_ip(self, ip_address):
         if ip_address not in self.ip_list:
@@ -337,30 +323,12 @@ class IP_List():
         ip_list = self.ip_list.copy()
         ip_list.remove(ip_address)
         self.set_ip_list(ip_list)
-        if configs["ip list transmitter"]["active"] and configs["ip list transmitter"]["mode"] == "client":
-            try:
-                addr = (configs["ip list transmitter"]["host"], configs["ip list transmitter"]["port"])
-                print_("Removing current ip address {} from ip list: {} of server: {}".format(ip_address, self.directory.key, addr))
-                server = socket.socket()
-                server.connect(addr)
-                server.send("remove%{}%{}".format(self.directory.key, ip_address).encode())
-                server.close()
-            except:
-                print_("ip list transmitter:", traceback.format_exc())
-        return ip_uid_manager.get_unique_id(ip_address)
+        ip_list_sync("remove%{}%{}".format(self.directory.key, ip_address), "Removing current ip address {} from ip list: {}.".format(ip_address, self.directory.key))
+        return True
 
     def clear(self):
         self.set_ip_list(list())
-        if configs["ip list transmitter"]["active"] and configs["ip list transmitter"]["mode"] == "client":
-            try:
-                addr = (configs["ip list transmitter"]["host"], configs["ip list transmitter"]["port"])
-                print_("Clearing ip list: {} of server: {}".format(self.directory.key, addr))
-                server = socket.socket()
-                server.connect(addr)
-                server.send("clear%{}".format(self.directory.key).encode())
-                server.close()
-            except:
-                print_("ip list transmitter:", traceback.format_exc())
+        ip_list_sync("clear%{}".format(self.directory.key), "Clearing ip list: {}.".format(self.directory.key))
 
 
 class IP_UID_Manager():
@@ -387,17 +355,23 @@ class IP_UID_Manager():
             if not line:
                 continue
             unique_id, ip_data = line.split(":")
-            ip_addresses = ip_data.split(",")
+            ip_address_data = ip_data.split(",")
+            if not ip_address_data:
+                continue
+            ip_addresses = list()
+            for ip_address in ip_address_data:
+                try:
+                    ip_address = ipaddress.ip_address(ip_address.split("#")[0].strip(" ").strip("\t"))
+                except ipaddress.AddressValueError as exception:
+                    import_error(self.directory, "ip address", i, exception)
+                    continue
+                ip_addresses.append(ip_address)
             if not ip_addresses:
                 continue
-            for ip_address in ip_addresses:
-                if check_ip_address(self.directory, i, ip_address):
-                    break
-            else:
-                self.ip_uids[ip_data] = unique_id
-                self.uids.add(unique_id)
-                if len(ip_addresses) > 1:
-                    self.ip_datas[unique_id] = ip_addresses
+            self.ip_uids[ip_data] = unique_id
+            self.uids.add(unique_id)
+            if len(ip_addresses) > 1:
+                self.ip_datas[unique_id] = ip_addresses
         for i in range(len(self.uids)):
             if not str(self.uid_count) in self.uids:
                 break
@@ -516,20 +490,26 @@ class Advanced_Firewall(Rule):
 
 class IP_Data():
     limit = 100
-    def __init__(self, unique_id, ip_addresses):
+    def __init__(self, unique_id):
         self.index = 0
         self.unique_id = unique_id
-        self.ip_addresses = ip_addresses
+        self.ip_addresses = list()
+        self.ip_address_type = None
         self.update = False
         self.present = False
 
     def create(self, ip_address):
         if ip_address in self.ip_addresses:
             return "already have"
-        if not len(self.ip_addresses) >= type(self).limit:
-            self.ip_addresses.append(ip_address)
-            self.update = True
-            return "added"
+        if self.ip_address_type and self.ip_address_type != type(ip_address):
+            return
+        if len(self.ip_addresses) >= type(self).limit:
+            return
+        if not self.ip_address_type:
+            self.ip_address_type = type(ip_address)
+        self.ip_addresses.append(ip_address)
+        self.update = True
+        return "added"
 
     def delete(self, unique_id):
         new_ip_addresses = self.ip_addresses.copy()
@@ -546,13 +526,24 @@ class IP_Data():
     def get_unique_id(self):
         return "-".join([self.unique_id, str(self.index)])
 
+    def ip_networks(self):
+        ip_networks = list()
+        if self.ip_address_type == ipaddress.IPv4Address:
+            for ip_address in self.ip_addresses:
+                ip_networks.append(ipaddress.IPv4Network(ip_address, strict = False))
+        elif self.ip_address_type == ipaddress.IPv6Address:
+            for ip_address in self.ip_addresses:
+                ip_networks.append(ipaddress.IPv6Network(ip_address, strict = False))
+        return ip_networks
 
 class Advanced_Rule(Rule):
     def __init__(self):
         Rule.__init__(self)
         self.ip_datas = dict()
         for unique_id, ip_addresses in ip_uid_manager.ip_datas.items():
-            self.ip_datas[unique_id] = IP_Data(unique_id, ip_addresses)
+            self.ip_datas[unique_id] = IP_Data(unique_id)
+            for ip_address in ip_addresses:
+                self.ip_datas[unique_id].create(ip_address)
 
     def list(self):
         rules = self.list_rules()
@@ -586,7 +577,8 @@ class Advanced_Rule(Rule):
                 pass
         else:
             ip_data_uid = ip_uid_manager.geneate_ip_data_uid(ip_address)
-            ip_data = IP_Data(ip_data_uid, [ip_address])
+            ip_data = IP_Data(ip_data_uid)
+            ip_data.create(ip_address)
             self.ip_datas[ip_data_uid] = ip_data
             print_("Created new rule-range ({}) with ip address: {}, unique id: {}".format(ip_data_uid, ip_address, unique_id))
 
@@ -609,7 +601,7 @@ class Advanced_Rule(Rule):
                 ip_data.present = True
             if ip_data.ip_addresses:
                 self.create_rule(ip_data)
-            ip_uid_manager.update_unique_id_data(unique_id, ",".join(ip_data.ip_addresses))
+            ip_uid_manager.update_unique_id_data(unique_id, ",".join([format(ip_address) for ip_address in ip_data.ip_addresses]))
         for ip_data_uid in to_be_deleted:
             self.delete_rule(ip_data_uid)
         self.refresh_rules()
@@ -656,7 +648,7 @@ class Google_Cloud(Advanced_Rule):
             "priority" : configs["google cloud"]["priority"] + ip_data.index,
             "network" : " --network={}".format(configs["google cloud"]["network"]) if configs["google cloud"]["network"] != "default" else "",
             "port" : configs["warband"]["port"],
-            "ip_addresses" : ",".join([str(ipaddress.IPv4Network(ip_address, strict = False)) for ip_address in ip_data.ip_addresses]),
+            "ip_addresses" : ",".join([ip_network.with_prefixlen for ip_network in ip_data.ip_networks()]),
         }
         subprocess.check_call(
             commands["google cloud"]["create"].format(**kwargs),
@@ -717,7 +709,7 @@ class Hetzner(Advanced_Rule):
           "direction": "in",
           "port": configs["warband"]["port"],
           "protocol": "udp",
-          "source_ips": ip_data.ip_addresses
+          "source_ips": [ip_network.with_netmask for ip_network in ip_data.ip_networks()],
         }
         print_("Created rule-range with unique id: {}".format(unique_id))
 
@@ -789,7 +781,9 @@ class Rule_Updater(threading.Thread):
                     time.sleep(1); continue
                 self.update = False
 
-                new_ip_list = set(ip_lists[directories.allowlist.key].get_ip_list()).union(set(ip_lists[directories.currentlist.key].get_ip_list())).difference(set(ip_lists[directories.blacklist.key].get_ip_list()))
+                new_ip_list = set(ip_lists[directories.allowlist.key].get_ip_list())\
+                    .union(set(ip_lists[directories.currentlist.key].get_ip_list()))\
+                    .difference(set(ip_lists[directories.blacklist.key].get_ip_list()))
                 
                 if not self.force and self.ip_list == new_ip_list:
                     time.sleep(1); continue
@@ -799,7 +793,6 @@ class Rule_Updater(threading.Thread):
                     self.list()
                 self.force = False
                 
-                del self.ip_list
                 self.ip_list = new_ip_list
                 new_unique_ids = set(ip_uid_manager.get_unique_id(ip_address) for ip_address in self.ip_list)
                 old_unique_ids = self.unique_ids.copy()
@@ -853,13 +846,11 @@ def pyshark_verifier():
     try:
         while True:
             time.sleep(1)
-            copy_verified_ip_addresses = verified_ip_addresses.copy()
+            for source_ip in verified_ip_addresses.copy():
+                ip_address = ipaddress.ip_address(ip_address)
+                if ip_list.add_ip(ip_address):
+                    print_("Verified new ip address: {}".format(ip_address))
             verified_ip_addresses.clear()
-            for source_ip in copy_verified_ip_addresses:
-                ip_address = clamp_ip_address(source_ip)
-                unique_id = ip_list.add_ip(ip_address)
-                if unique_id:
-                    print_("Verified new ip address: {}, unique_id: {}".format(ip_address, unique_id))
     except:
         print_("pyshark verifier:", traceback.format_exc())
 
@@ -1003,6 +994,9 @@ def eval_tool():
             print_("eval tool:", traceback.format_exc())
 
 def ip_list_server():
+    def log(addr, log):
+        print_("IP Server {}: {}".format(addr, log))
+        
     while True:
         try:
             server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -1021,22 +1015,31 @@ def ip_list_server():
                     directory_key = message.pop(0)
                     ip_list = ip_lists[directory_key]
                     if param in ["add", "remove"]:
-                        ip_addresses = [clamp_ip_address(ip_address) for ip_address in message.pop(0).split("&")]
+                        ip_addresses = message.pop(0).split("&")
                     if param == "add":
                         for ip_address in ip_addresses:
-                            unique_id = ip_list.add_ip(ip_address)
-                            if unique_id:
-                                print_("Added new ip address {}, unique_id: {} to ip list: {} by client: {}".format(ip_address, unique_id, directory_key, addr))
+                            ip_address = ipaddress.ip_address(ip_address)
+                            if ip_list.add_ip(ip_address):
+                                log(addr, "Added new ip address {} to ip list {}.".format(ip_address, directory_key))
                     elif param == "remove":
                         for ip_address in ip_addresses:
-                            unique_id = ip_list.remove_ip(ip_address)
-                            if unique_id:
-                                print_("Removed current ip address {}, unique_id: {} from ip list: {} by client: {}".format(ip_address, unique_id, directory_key, addr))
+                            ip_address = ipaddress.ip_address(ip_address)
+                            if ip_list.remove_ip(ip_address):
+                                log(addr, "Removed current ip address {}, from ip list {}.".format(ip_address, directory_key))
                     elif param == "clear":
                         ip_list.clear()
-                        print_("Cleared ip list: {} of client: {}".format(directory_key, addr))
+                        log(addr, "Cleared ip list {}.".format(directory_key))
         except:
-            print_("ip_list_server:", traceback.format_exc())
+            print_("ip list server:", traceback.format_exc())
+
+def ip_list_sync(message, log = None):
+    if configs["ip list transmitter"]["active"] and configs["ip list transmitter"]["mode"] == "client":
+        try:
+            addr = (configs["ip list transmitter"]["host"], configs["ip list transmitter"]["port"])
+            if log: print_("IP Sync {}: {}".format(addr, log))
+            send_message(addr, message)
+        except:
+            print_("ip list sync:", traceback.format_exc())
 
 try:
     print_("Loading...")
@@ -1076,7 +1079,7 @@ try:
     if configs["pyshark"]["active"]:
         threading.Thread(target = pyshark_listener).start()
         threading.Thread(target = pyshark_verifier).start()
-    
+
     if configs["cloudflare"]["active"]:
         threading.Thread(target = cloudflare_communicator).start()
         time.sleep(1)
