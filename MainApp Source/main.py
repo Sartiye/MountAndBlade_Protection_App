@@ -875,7 +875,7 @@ def cloudflare_communicator():
                 ).encode()
             )
             response = server.recv(1024).decode()
-            code = response.split("\r\n\r\n")[1]
+            code = response.split("\r\n\r\n")[1].split("\r\n")[1]
             server.send(
                 commands["cloudflare"]["confirm ping"].format(
                     port = configs["pyshark"]["port"],
