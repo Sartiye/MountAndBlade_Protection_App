@@ -12,7 +12,6 @@ import pyshark
 import ipaddress
 import requests
 import json
-import itertools
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
@@ -272,7 +271,7 @@ class IP_List():
         if ip_list == self.ip_list:
             return
         if self.size != None:
-            ip_list = itertools.islice(ip_list, max(len(ip_list) - self.size, 0), None)
+            ip_list = ip_list[max(len(ip_list) - self.size, 0):]
         with self.lock:
             self.ip_list = ip_list
             Event_Handler.file_call = True
@@ -847,7 +846,7 @@ def pyshark_verifier():
         while True:
             time.sleep(1)
             for source_ip in verified_ip_addresses.copy():
-                ip_address = ipaddress.ip_address(ip_address)
+                ip_address = ipaddress.ip_address(source_ip)
                 if ip_list.add_ip(ip_address):
                     print_("Verified new ip address: {}".format(ip_address))
             verified_ip_addresses.clear()
