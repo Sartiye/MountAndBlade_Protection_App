@@ -713,7 +713,8 @@ class Hetzner(Advanced_Rule):
         print_("Created rule-range with unique id: {}".format(unique_id))
 
     def delete_rule(self, unique_id):
-        self.rules.pop(unique_id)
+        if unique_id in self.rules:
+            self.rules.pop(unique_id)
         print_("Deleted rule-range with unique_id: {}".format(unique_id))
     
     def refresh_rules(self):
