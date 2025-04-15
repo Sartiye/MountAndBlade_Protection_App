@@ -1,0 +1,5 @@
+pyshark
+requests
+watchdog
+pywin32
+py2exe

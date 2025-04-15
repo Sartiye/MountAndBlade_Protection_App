@@ -1,0 +1,9 @@
+*
+!.gitignore
+!Data/
+!Data/**
+!Dumpcap/
+!Dumpcap/**
+!Logs/
+!Logs/**
+

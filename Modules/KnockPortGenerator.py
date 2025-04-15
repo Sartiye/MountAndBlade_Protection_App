@@ -14,6 +14,6 @@ def get_knock_port(ip_address: str, base_port: int = 50000, range_size: int = 10
     return knock_port
 
 # ✅ Test
-ip = socket.gethostbyname(socket.gethostname())
+ip = input("ip: ") # socket.gethostbyname(socket.gethostname())
 port = get_knock_port(ip)
 print(f"Knock port for {ip}: {port}")
