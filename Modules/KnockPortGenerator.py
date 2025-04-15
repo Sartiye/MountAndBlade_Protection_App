@@ -1,7 +1,7 @@
 import socket
 import struct
 
-def get_knock_port(ip_address: str, base_port: int = 50000, range_size: int = 10000) -> int:
+def get_knock_port(ip_address: str, base_port: int = 50000, range_size: int = 10000):
     # Convert IP to 32-bit unsigned int
     packed_ip = socket.inet_aton(ip_address)             # e.g., b'\xcb\x00q-'
     ip_int = struct.unpack("!I", packed_ip)[0]            # Unsigned int in network byte order
@@ -14,7 +14,6 @@ def get_knock_port(ip_address: str, base_port: int = 50000, range_size: int = 10
     return knock_port
 
 # ✅ Test
-while True:
-    ip = input("ip: ")
-    port = get_knock_port(ip)
-    print(f"Knock port for {ip}: {port}")
+ip = socket.gethostbyname(socket.gethostname())
+port = get_knock_port(ip)
+print(f"Knock port for {ip}: {port}")
