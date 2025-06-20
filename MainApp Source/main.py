@@ -852,8 +852,6 @@ def pyshark_verifier():
         print_("pyshark verifier:", traceback.format_exc())
 
 def cloudflare_communicator():
-    if not check_commands("cloudflare", []):
-        return
     while True:
         try:
             route = bool(configs["cloudflare"]["gateway"])

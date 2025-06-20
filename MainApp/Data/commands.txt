@@ -23,21 +23,5 @@ https://api.hetzner.cloud/v1/firewalls
 [hetzner.set]
 https://api.hetzner.cloud/v1/firewalls/{firewall_id}/actions/set_rules
 
-[cloudflare.ping]
-GET /handlerservers.ashx?type=ping&keys&port={port}&hidden=false HTTP/1.1\r\n
-Host: www.w3.org\r\n
-User-Agent: curl/7.65.3\r\n
-Accept: */*\r\n
-Accept-Encoding: deflate, gzip, br\r\n
-\r\n
-
-[cloudflare.confirm ping]
-GET /handlerservers.ashx?type=confirmping&port={port}&rand={code}&hidden=false HTTP/1.1\r\n
-Host: www.w3.org\r\n
-User-Agent: curl/7.65.3\r\n
-Accept: */*\r\n
-Accept-Encoding: deflate, gzip, br\r\n
-\r\n
-
 [dumpcap.command]
 {application} -b filesize:{filesize} -b printname:{printname} -w {write} -i {interface} -f {filter}
