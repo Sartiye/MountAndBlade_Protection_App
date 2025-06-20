@@ -26,6 +26,12 @@ class Directory():
                 string_parts.append(part)
         self.raw_string = os.path.join(*string_parts)
 
+    def ensure_exists(self, path):
+        os.makedirs(os.path.dirname(path), exist_ok = True)
+        # If path ends like a file (e.g., has .log or .txt), create it
+        if os.path.splitext(path)[1] and not os.path.exists(path):
+            open(path, "a").close()
+
     def format(self, **kwargs):
         self.kwargs.update(kwargs)
         return self.string()
@@ -33,7 +39,9 @@ class Directory():
     def string(self):
         current_kwargs = self.kwargs.copy()
         current_kwargs.update(self.parent.kwargs)
-        return self.raw_string.format(**current_kwargs)
+        path = self.raw_string.format(**current_kwargs)
+        self.ensure_exists(path)
+        return path
 
     def __str__(self):
         return self.string()
