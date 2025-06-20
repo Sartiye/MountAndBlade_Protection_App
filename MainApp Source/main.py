@@ -12,6 +12,7 @@ import pyshark
 import ipaddress
 import requests
 import json
+import http.client
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
@@ -169,10 +170,6 @@ base_commands = {
     "hetzner" : {
         "list" : "",
         "set" : "",
-    },
-    "cloudflare" : {
-        "ping" : "",
-        "confirm ping" : "",
     },
     "dumpcap" : {
         "command" : "",
@@ -861,36 +858,54 @@ def cloudflare_communicator():
         try:
             route = bool(configs["cloudflare"]["gateway"])
             host = socket.gethostbyname(configs["cloudflare"]["hostname"])
+            port = configs["pyshark"]["port"]
+            keys = None
             if route:
                 subprocess.check_call(
                     "route add {} {}".format(host, configs["cloudflare"]["gateway"]),
                     shell = True,
                     stdout = subprocess.PIPE,
                 )
-            server = socket.create_connection((host, configs["cloudflare"]["port"]))
-            server.send(
-                commands["cloudflare"]["ping"].format(
-                    port = configs["pyshark"]["port"],
-                    hostname = configs["cloudflare"]["hostname"]
-                ).encode()
-            )
-            response = server.recv(1024).decode()
-            code = response.split("\r\n\r\n")[1].split("\r\n")[1]
-            server.send(
-                commands["cloudflare"]["confirm ping"].format(
-                    port = configs["pyshark"]["port"],
-                    code = code,
-                    hostname = configs["cloudflare"]["hostname"],
-                ).encode()
-            )
-            response = server.recv(1024).decode()
-            server.close()
+            # Reuse the same connection for keep-alive
+            conn = http.client.HTTPConnection(configs["cloudflare"]["hostname"], configs["cloudflare"]["port"], timeout=5)
+
+            # Step 1: Forward ping request
+            ping_path = f"/handlerservers.ashx?type=ping&keys"
+            if keys:
+                ping_path += f"={keys}"
+            if port != 7240:
+                ping_path += f"&port={port}"
+            ping_path += "&hidden=false"
+
+            conn.putrequest("GET", ping_path)
+            conn.putheader("Host", "www.w3.org")
+            conn.putheader("User-Agent", "curl/7.65.3")
+            conn.putheader("Accept", "*/*")
+            conn.putheader("Accept-Encoding", "deflate, gzip, br")
+            conn.endheaders()
+
+            rand_value = conn.getresponse().read().decode().strip()
+
+            # Step 2: Immediately send confirmping
+            confirm_path = "/handlerservers.ashx?type=confirmping"
+            if port:
+                confirm_path += f"&port={port}"
+            confirm_path += f"&rand={rand_value}&hidden=false"
+            conn.putrequest("GET", confirm_path)
+            conn.putheader("Host", "www.w3.org")
+            conn.putheader("User-Agent", "curl/7.65.3")
+            conn.putheader("Accept", "*/*")
+            conn.putheader("Accept-Encoding", "deflate, gzip, br")
+            conn.endheaders()
+
+            resp = conn.getresponse().read().decode().strip()
             print_(
-                "Pinged host: {} ({}), port: {}, gateway: {}".format(
+                "Pinged host: {} ({}), port: {}, gateway: {}, response: {}".format(
                     configs["cloudflare"]["hostname"],
                     host,
                     configs["pyshark"]["port"],
                     configs["cloudflare"]["gateway"] if route else "On-link",
+                    resp,
                 )
             )
             if route:
