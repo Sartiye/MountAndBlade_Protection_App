@@ -19,6 +19,8 @@ from watchdog.events import FileSystemEventHandler
 from modules.directories import directories
 import modules.admin as admin
 
+eval_string = ""
+
 def print_(*string, sep = " ", end = "\n", flush = False):
     if eval_string:
         print("\r" + " " * len(eval_string) + "\r", end = ""),
@@ -32,15 +34,13 @@ def print_(*string, sep = " ", end = "\n", flush = False):
         sys.stdout = old_stdout
     if eval_string:
         print(eval_string, end = "", flush = True)
-        
+
 try:
     if not admin.isUserAdmin():
         admin.runAsAdmin(wait = False)
         sys.exit(0)
 except RuntimeError:
     print_("Couldn't start the program as admin.")
-
-eval_string = ""
         
 def check_file(directory):
     try:
