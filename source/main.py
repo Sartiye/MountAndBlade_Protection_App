@@ -922,6 +922,7 @@ def dumpcap_logger():
         return
     try:
         while True:
+            # Build parameters
             kwargs = {
                 "application" : configs["dumpcap"]["application"],
                 "filesize" : configs["dumpcap"]["filesize"],
@@ -931,14 +932,18 @@ def dumpcap_logger():
                 "filter" : configs["dumpcap"]["filter"].format(host = configs["warband"]["host"], port = configs["warband"]["port"]),
             }
             parameters = [parameter.format(**kwargs) for parameter in commands["dumpcap"]["command"].split(" ")]
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            subprocess.Popen(
-                parameters,
-                startupinfo = startupinfo,
-                stdout = None if configs["dumpcap"]["show stdout"] else subprocess.PIPE,
-                stderr = None if configs["dumpcap"]["show stdout"] else subprocess.PIPE,
-            ).wait()
+
+            # Set output
+            stdout = None if configs["dumpcap"]["show stdout"] else subprocess.PIPE
+            stderr = None if configs["dumpcap"]["show stdout"] else subprocess.PIPE
+
+            # Platform-aware startup
+            if os.name == "nt":
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                subprocess.Popen(parameters, startupinfo=startupinfo, stdout=stdout, stderr=stderr).wait()
+            else:
+                subprocess.Popen(parameters, stdout=stdout, stderr=stderr).wait()
     except:
         print_("dumpcap logger:", traceback.format_exc())
 
