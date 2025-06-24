@@ -36,7 +36,7 @@ def print_(*string, sep = " ", end = "\n", flush = False):
         print(eval_string, end = "", flush = True)
 
 try:
-    if not admin.isUserAdmin():
+    if os.name == "nt" and not admin.isUserAdmin():
         admin.runAsAdmin(wait = False)
         sys.exit(0)
 except RuntimeError:
