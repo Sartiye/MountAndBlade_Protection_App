@@ -16,8 +16,8 @@ import http.client
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-from module_directories import directories
-import admin
+from modules.directories import directories
+import modules.admin as admin
 
 def print_(*string, sep = " ", end = "\n", flush = False):
     if eval_string:

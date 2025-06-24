@@ -1,8 +1,8 @@
-from header_directories import *
+from modules.header_directories import Directory_Manager
 
 directories = Directory_Manager(
-    data = [".", "Data"],
-    logs = [".data", "Logs"],
+    data = [".", "data"],
+    logs = [".data", "logs"],
     log = [".logs", "log_{strftime}.txt"],
     configs = [".data", "configs.txt"],
     commands = [".data", "commands.txt"],
@@ -10,6 +10,6 @@ directories = Directory_Manager(
     blacklist = [".data", "blacklist.txt"],
     currentlist = [".data", "currentlist.txt"],
     ip_uids = [".data", "ip uids.txt"],
-    dumpcap = [".data", "Dumpcap"],
+    dumpcap = [".data", "dumpcap"],
     pcap = [".dumpcap", "{filename}.pcap"],
 )

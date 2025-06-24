@@ -10,21 +10,21 @@ def send_message_warband(client, *message):
     text = "HTTP/1.1 200 OK\r\nContent-Lenght: {}\r\n\r\n{}\r\n".format(128, serialize(*message))
     client.send(text.encode())
 
-protection_addr = ("145.239.234.13", 7000)
-warband_addr = ("127.0.0.1", 80)
+protection_addr = ("0.0.0.0", 7010)
+warband_addr = ("127.0.0.2", 80)
 messages = list()
 messages_lock = threading.Lock()
 
-while True:
-    try:
-        server = socket.socket()
-        server.connect(protection_addr)
-        server.send("clear%currentlist".encode())
-        server.close()
-        print("Cleared currentlist of server.")
-        break
-    except:
-        print("Couldn't connect to protection server:", traceback.format_exc())
+##while True:
+##    try:
+##        server = socket.socket()
+##        server.connect(protection_addr)
+##        server.send("clear%currentlist".encode())
+##        server.close()
+##        print("Cleared currentlist of server.")
+##        break
+##    except:
+##        print("Couldn't connect to protection server:", traceback.format_exc())
 
 def message_sender():
     while True:
