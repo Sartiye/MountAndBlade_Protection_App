@@ -465,7 +465,6 @@ class Advanced_Firewall(Rule):
                 shell = True,
                 stderr = subprocess.PIPE,
             ).decode().split("\r\n")[:-1]]
-            print(rules)
         except subprocess.CalledProcessError:
             return []
         return rules
@@ -517,7 +516,7 @@ class IPSet(Rule):
         ip_addresses = data[data.index("Members:") + 1:]
         unique_ids = list()
         for ip_address in ip_addresses:
-            unique_ids.append(ip_uid_manager.get_unique_id(ip_address))
+            unique_ids.append(ip_uid_manager.get_unique_id(ipaddress.ip_address(ip_address)))
         return unique_ids
 
     def create(self, unique_id, ip_address):
