@@ -366,14 +366,19 @@ class IP_UID_Manager():
             ip_addresses = list()
             for ip_address in ip_address_data:
                 try:
-                    ip_address = ipaddress.ip_address(ip_address.split("#")[0].strip(" ").strip("\t"))
+                    ip_address = ipaddress.ip_address(ip_address)
                 except ipaddress.AddressValueError as exception:
                     import_error(self.directory, "ip address", i, exception)
                     continue
                 ip_addresses.append(ip_address)
             if not ip_addresses:
                 continue
-            self.ip_uids[ip_data] = unique_id
+            elif len(ip_addresses) == 1:
+                ip_address = ip_addresses[0]
+                self.ip_uids[ip_address] = unique_id
+            else:
+                ip_data = IP_Data(unique_id, ip_addresses)
+                self.ip_uids[ip_data] = unique_id
             self.uids.add(unique_id)
             if len(ip_addresses) > 1:
                 self.ip_datas[unique_id] = ip_addresses
@@ -551,11 +556,11 @@ class IPSet(Rule):
 
 class IP_Data():
     limit = 100
-    def __init__(self, unique_id):
+    def __init__(self, unique_id, ip_addresses = None):
         self.index = 0
         self.unique_id = unique_id
-        self.ip_addresses = list()
-        self.ip_address_type = None
+        self.ip_addresses = ip_addresses if ip_addresses else list()
+        self.ip_address_type = type(ip_addresses[0]) if ip_addresses else None
         self.update = False
         self.present = False
 
