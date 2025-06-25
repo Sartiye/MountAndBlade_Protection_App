@@ -8,6 +8,15 @@ netsh advfirewall firewall add rule name={header}-{unique_id} dir=in action=allo
 [advanced firewall.delete]
 netsh advfirewall firewall delete rule name={header}-{unique_id}
 
+[ipset.list]
+sudo ipset list {name}
+
+[ipset.create]
+sudo ipset add {name} {ip_address}
+
+[ipset.delete]
+sudo ipset del {name} {ip_address}
+
 [google cloud.list]
 gcloud compute --project={project} firewall-rules list --filter="name~'^{header}-.*$'"
 

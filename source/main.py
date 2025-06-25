@@ -111,6 +111,10 @@ base_configs = {
         "active" : False,
         "header" : "warband",
     },
+    "ipset" : {
+        "active" : False,
+        "name" : "allowlist",
+    },
     "google cloud" : {
         "active" : False,
         "project" : "",
@@ -157,6 +161,11 @@ base_configs = {
     },
 }
 base_commands = {
+    "advanced firewall" : {
+        "list" : "",
+        "create" : "",
+        "delete" : "",
+    },
     "advanced firewall" : {
         "list" : "",
         "create" : "",
@@ -437,7 +446,7 @@ class Rule():
 
 class Advanced_Firewall(Rule):
     def __init__(self):
-        Rule.__init__(self)
+        super().__init__(self)
         if not check_commands("advanced firewall", []):
             self.defined = False
 
@@ -451,6 +460,7 @@ class Advanced_Firewall(Rule):
                 shell = True,
                 stderr = subprocess.PIPE,
             ).decode().split("\r\n")[:-1]]
+            print(rules)
         except subprocess.CalledProcessError:
             return []
         return rules
@@ -482,6 +492,67 @@ class Advanced_Firewall(Rule):
             stderr = subprocess.PIPE,
         )
         print_("Deleted rule with unique_id: {}".format(unique_id))
+
+class IPSet(Rule):
+    def __init__(self):
+        super().__init__()
+        self.unique_ids = dict()
+        if not check_commands("ipset", []):
+            self.defined = False
+
+    def list(self):
+        kwargs = {
+            "name" : configs["ipset"]["name"],
+        }
+        output = subprocess.check_output(
+            commands["ipset"]["list"].format(**kwargs),
+            shell = True,
+            stderr = subprocess.PIPE,
+        ).decode().splitlines()
+        print_(output) #debug for more optimization
+        lines = [line.strip() for line in output if line.strip()]
+        in_members = False
+        unique_ids = list()
+        for line in lines:
+            if line == "Members:":
+                in_members = True
+                continue
+            if not in_members: continue
+            unique_ids.append(ip_uid_manager.get_unique_id(line))
+        return unique_ids
+
+    def create(self, unique_id, ip_address):
+        if unique_id in self.unique_ids:
+            return
+        kwargs = {
+            "name" : configs["ipset"]["name"],
+            "ip_address" : ip_address,
+        }
+        subprocess.check_call(
+            commands["ipset"]["create"].format(**kwargs),
+            shell = True,
+            stdout = subprocess.PIPE,
+            stderr = subprocess.PIPE,
+        )
+        self.unique_ids[unique_id] = ip_address
+        print_(f"[IPSet] Added IP {ip_address} with ID '{unique_id}'.")
+
+    def delete(self, unique_id):
+        if unique_id not in self.unique_ids:
+            return
+        ip_address = self.unique_ids[unique_id]
+        kwargs = {
+            "name" : configs["ipset"]["name"],
+            "ip_address" : ip_address,
+        }
+        subprocess.check_call(
+            commands["ipset"]["delete"].format(**kwargs),
+            shell = True,
+            stdout = subprocess.PIPE,
+            stderr = subprocess.PIPE,
+        )
+        del self.unique_ids[unique_id]
+        print_(f"[IPSet] Removed IP {ip_address} with ID '{unique_id}'.")
 
 
 class IP_Data():
@@ -534,7 +605,7 @@ class IP_Data():
 
 class Advanced_Rule(Rule):
     def __init__(self):
-        Rule.__init__(self)
+        super().__init__(self)
         self.ip_datas = dict()
         for unique_id, ip_addresses in ip_uid_manager.ip_datas.items():
             self.ip_datas[unique_id] = IP_Data(unique_id)
@@ -617,7 +688,7 @@ class Advanced_Rule(Rule):
 
 class Google_Cloud(Advanced_Rule):
     def __init__(self):
-        Advanced_Rule.__init__(self)
+        super().__init__(self)
         if not check_commands("google cloud", []):
             self.defined = False
             return
@@ -672,7 +743,7 @@ class Google_Cloud(Advanced_Rule):
 
 class Hetzner(Advanced_Rule):
     def __init__(self):
-        Advanced_Rule.__init__(self)
+        super().__init__(self)
         if not check_commands("hetzner", []):
             self.defined = False
             return
@@ -1081,6 +1152,11 @@ try:
     rule_list = list()
     if configs["advanced firewall"]["active"]:
         rule = Advanced_Firewall()
+        if rule.defined:
+            rule_list.append(rule)
+
+    if configs["ipset"]["active"]:
+        rule = IPSet()
         if rule.defined:
             rule_list.append(rule)
 
