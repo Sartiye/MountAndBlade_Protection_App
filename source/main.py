@@ -504,21 +504,15 @@ class IPSet(Rule):
         kwargs = {
             "name" : configs["ipset"]["name"],
         }
-        output = subprocess.check_output(
+        data = subprocess.check_output(
             commands["ipset"]["list"].format(**kwargs),
             shell = True,
             stderr = subprocess.PIPE,
         ).decode().splitlines()
-        print_(output) #debug for more optimization
-        lines = [line.strip() for line in output if line.strip()]
-        in_members = False
+        ip_addresses = data[data.index("Members:") + 1:]
         unique_ids = list()
-        for line in lines:
-            if line == "Members:":
-                in_members = True
-                continue
-            if not in_members: continue
-            unique_ids.append(ip_uid_manager.get_unique_id(line))
+        for ip_address in ip_addresses:
+            unique_ids.append(ip_uid_manager.get_unique_id(ip_address))
         return unique_ids
 
     def create(self, unique_id, ip_address):
