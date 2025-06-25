@@ -166,7 +166,7 @@ base_commands = {
         "create" : "",
         "delete" : "",
     },
-    "advanced firewall" : {
+    "ipset" : {
         "list" : "",
         "create" : "",
         "delete" : "",
