@@ -10,8 +10,8 @@ def send_message_warband(client, *message):
     text = "HTTP/1.1 200 OK\r\nContent-Lenght: {}\r\n\r\n{}\r\n".format(128, serialize(*message))
     client.send(text.encode())
 
-protection_addr = ("0.0.0.0", 7010)
-warband_addr = ("127.0.0.2", 80)
+protection_addr = ("127.0.1.1", 7010)
+warband_addr = ("127.0.0.2", 8080)
 messages = list()
 messages_lock = threading.Lock()
 
