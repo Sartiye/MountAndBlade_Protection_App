@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Config
-REPO_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+REPO_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
 SERVICE_DIR="$REPO_DIR/services"
 SYSTEMD_DIR="/etc/systemd/system"
 USER=$(whoami)
