@@ -2,6 +2,7 @@ import socket
 import traceback
 import threading
 import time
+import os
 
 def serialize(*args):
     return ("{}|" * len(args)).format(*args)
@@ -11,20 +12,9 @@ def send_message_warband(client, *message):
     client.send(text.encode())
 
 protection_addr = ("127.0.1.1", 7010)
-warband_addr = ("127.0.0.2", 8080)
+warband_addr = ("127.0.0.2", 8080 if os.name == "posix" else 80)
 messages = list()
 messages_lock = threading.Lock()
-
-##while True:
-##    try:
-##        server = socket.socket()
-##        server.connect(protection_addr)
-##        server.send("clear%currentlist".encode())
-##        server.close()
-##        print("Cleared currentlist of server.")
-##        break
-##    except:
-##        print("Couldn't connect to protection server:", traceback.format_exc())
 
 def message_sender():
     while True:

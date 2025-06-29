@@ -3,13 +3,13 @@ import py2exe
 
 setup(
     console = [
-      "main.py"
+      "source/main.py"
     ],
     windows = [
     ],
     options = {
         "py2exe" : {
-            "dist_dir": "../MainApp",
+            "dist_dir": "bin",
             "includes": "charset_normalizer.md__mypyc",
         }
     },
