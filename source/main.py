@@ -514,10 +514,12 @@ class IPSet(Rule):
             stderr = subprocess.PIPE,
         ).decode().splitlines()
         ip_addresses = data[data.index("Members:") + 1:]
-        unique_ids = list()
+        self.unique_ids.clear()
         for ip_address in ip_addresses:
-            unique_ids.append(ip_uid_manager.get_unique_id(ipaddress.ip_address(ip_address)))
-        return unique_ids
+            ip_address = ipaddress.ip_address(ip_address)
+            unique_id = ip_uid_manager.get_unique_id(ip_address)
+            self.unique_ids[unique_id] = ip_address
+        return unique_ids.keys()
 
     def create(self, unique_id, ip_address):
         if unique_id in self.unique_ids:
