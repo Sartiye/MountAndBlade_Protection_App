@@ -706,8 +706,9 @@ class Google_Cloud(Advanced_Rule):
         return [fw.name for fw in rules if fw.name.startswith(f"{configs['google cloud']['header']}-")]
         
     def create_rule(self, ip_data):
+        unique_id = ip_data.get_unique_id()
         firewall_rule = compute_v1.Firewall(
-            name = f"{configs['google cloud']['header']}-{ip_data.get_unique_id()}",
+            name = f"{configs['google cloud']['header']}-{unique_id}",
             direction = "INGRESS",
             priority = configs["google cloud"]["priority"] + ip_data.index,
             network = f"projects/{configs['google cloud']['project']}/global/networks/{configs['google cloud']['network']}",
@@ -716,7 +717,7 @@ class Google_Cloud(Advanced_Rule):
         )
         operation = self.firewall_client.insert(project = configs["google cloud"]["project"], firewall_resource = firewall_rule)
         operation.result()  # Waits for completion
-        print_("Created rule-range with unique id: {}".format(kwargs["unique_id"]))
+        print_("Created rule-range with unique id: {}".format(unique_id))
 
     def delete_rule(self, unique_id):
         operation = self.firewall_client.delete(project = configs["google cloud"]["project"], firewall = f"{configs['google cloud']['header']}-{unique_id}")
