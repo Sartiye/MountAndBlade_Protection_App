@@ -461,7 +461,7 @@ class Rule():
 
 class Advanced_Firewall(Rule):
     def __init__(self):
-        super().__init__(self)
+        super().__init__()
         if not check_commands("advanced firewall", []):
             self.defined = False
 
@@ -615,7 +615,7 @@ class IP_Data():
 
 class Advanced_Rule(Rule):
     def __init__(self):
-        super().__init__(self)
+        super().__init__()
         self.ip_datas = dict()
         for unique_id, ip_addresses in ip_uid_manager.ip_datas.items():
             self.ip_datas[unique_id] = IP_Data(unique_id)
@@ -698,7 +698,7 @@ class Advanced_Rule(Rule):
 
 class Google_Cloud(Advanced_Rule):
     def __init__(self):
-        super().__init__(self)
+        super().__init__()
 ##        if not check_commands("google cloud", []):
 ##            self.defined = False
 ##            return
@@ -734,7 +734,7 @@ class Google_Cloud(Advanced_Rule):
 
 class Hetzner(Advanced_Rule):
     def __init__(self):
-        super().__init__(self)
+        super().__init__()
         if not check_commands("hetzner", []):
             self.defined = False
             return
