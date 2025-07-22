@@ -1,0 +1,12 @@
+[Unit]
+Description=MB Protection App
+After=network.target
+
+[Service]
+WorkingDirectory=__REPO_DIR__
+ExecStart=__REPO_DIR__/source/env/bin/python source/main.py
+Restart=always
+User=__USER__
+
+[Install]
+WantedBy=multi-user.target
