@@ -17,15 +17,6 @@ sudo ipset add {name} {ip_address}
 [ipset.delete]
 sudo ipset del {name} {ip_address}
 
-[google cloud.list]
-gcloud compute --project={project} firewall-rules list --filter="name~'^{header}-.*$'"
-
-[google cloud.create]
-gcloud compute --project={project} firewall-rules create {header}-{unique_id} --direction=INGRESS --priority={priority}{network} --action=ALLOW --rules=udp:{port} --source-ranges={ip_addresses}
-
-[google cloud.delete]
-gcloud compute --project={project} firewall-rules delete {header}-{unique_id}
-
 [hetzner.list]
 https://api.hetzner.cloud/v1/firewalls
 
