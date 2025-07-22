@@ -712,7 +712,7 @@ class Google_Cloud(Advanced_Rule):
             priority = configs["google cloud"]["priority"] + ip_data.index,
             network = f"projects/{configs['google cloud']['project']}/global/networks/{configs['google cloud']['network']}",
             source_ranges = [ip_network.with_prefixlen for ip_network in ip_data.ip_networks()],
-            allowed = [compute_v1.Allowed(ip_protocol="udp", ports = [configs["warband"]["port"]])]
+            allowed = [compute_v1.Allowed(I_p_protocol="udp", ports = [configs["warband"]["port"]])]
         )
         operation = self.firewall_client.insert(project = configs["google cloud"]["project"], firewall_resource = firewall_rule)
         operation.result()  # Waits for completion
