@@ -16,6 +16,8 @@ import http.client
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
+from google.cloud import compute_v1
+
 from modules.directories import directories
 import modules.admin as admin
 
@@ -697,55 +699,36 @@ class Advanced_Rule(Rule):
 class Google_Cloud(Advanced_Rule):
     def __init__(self):
         super().__init__(self)
-        if not check_commands("google cloud", []):
-            self.defined = False
-            return
+##        if not check_commands("google cloud", []):
+##            self.defined = False
+##            return
         if not check_configs("google cloud", ["project"]):
             self.defined = False
             return
 
+        self.firewall_client = compute_v1.FirewallsClient()
+
     def list_rules(self):
-        kwargs = {
-            "project" : configs["google cloud"]["project"],
-            "header" : configs["google cloud"]["header"],
-        }
-        return [str(rule).split(" ")[0] for rule in subprocess.check_output(
-            commands["google cloud"]["list"].format(**kwargs),
-            shell = True,
-            stderr = subprocess.PIPE,
-        ).decode().split("\n")][1:-1]
+        request = compute_v1.ListFirewallsRequest(project = configs["google cloud"]["project"])
+        rules = self.firewall_client.list(request = request)
+        return [fw.name for fw in rules if fw.name.startswith(f"{configs['google cloud']['header']}-")]
         
     def create_rule(self, ip_data):
-        kwargs = {
-            "project" : configs["google cloud"]["project"],
-            "header" : configs["google cloud"]["header"],
-            "unique_id" : ip_data.get_unique_id(),
-            "priority" : configs["google cloud"]["priority"] + ip_data.index,
-            "network" : " --network={}".format(configs["google cloud"]["network"]) if configs["google cloud"]["network"] != "default" else "",
-            "port" : configs["warband"]["port"],
-            "ip_addresses" : ",".join([ip_network.with_prefixlen for ip_network in ip_data.ip_networks()]),
-        }
-        subprocess.check_call(
-            commands["google cloud"]["create"].format(**kwargs),
-            shell = True,
-            stdout = subprocess.PIPE,
-            stderr = subprocess.PIPE,
+        firewall_rule = compute_v1.Firewall(
+            name = f"{configs['google cloud']['header']}-{ip_data.get_unique_id()}",
+            direction = "INGRESS",
+            priority = configs["google cloud"]["priority"] + ip_data.index,
+            network = f"projects/{configs['google cloud']['project']}/global/networks/{configs['google cloud']['network']}",
+            source_ranges = [ip_network.with_prefixlen for ip_network in ip_data.ip_networks()],
+            allowed = [compute_v1.Allowed(IPProtocol="udp", ports = [configs["warband"]["port"]])]
         )
+        operation = self.firewall_client.insert(project = configs["google cloud"]["project"], firewall_resource = firewall_rule)
+        operation.result()  # Waits for completion
         print_("Created rule-range with unique id: {}".format(kwargs["unique_id"]))
 
     def delete_rule(self, unique_id):
-        kwargs = {
-            "project" : configs["google cloud"]["project"],
-            "header" : configs["google cloud"]["header"],
-            "unique_id" : unique_id,
-        }
-        subprocess.Popen(
-            commands["google cloud"]["delete"].format(**kwargs),
-            shell = True,
-            stdin = subprocess.PIPE,
-            stdout = subprocess.PIPE,
-            stderr = subprocess.PIPE,
-        ).communicate("Y".encode())
+        operation = self.firewall_client.delete(project = configs["google cloud"]["project"], firewall = f"{configs['google cloud']['header']}-{unique_id}")
+        operation.result()
         print_("Deleted rule-range with unique_id: {}".format(unique_id))
 
 
