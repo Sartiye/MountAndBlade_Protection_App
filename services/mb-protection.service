@@ -7,6 +7,7 @@ WorkingDirectory=__REPO_DIR__
 ExecStart=__REPO_DIR__/source/env/bin/python source/main.py
 Restart=always
 User=__USER__
+Environment=GOOGLE_APPLICATION_CREDENTIALS=__REPO_DIR__/data/credentials/firewall-manager.json
 
 [Install]
 WantedBy=multi-user.target
