@@ -830,7 +830,7 @@ class Rule_Updater(threading.Thread):
     def run(self):
         while True:
             try:
-                if not self.update and not configs["IP UIDs"]["rule updater delay"]:
+                if not (self.update or configs["IP UIDs"]["rule updater delay"]):
                     time.sleep(1); continue
                 self.update = False
 
@@ -890,7 +890,7 @@ def pyshark_listener():
         for packet in capture.sniff_continuously():
             source_ip = packet.ip.src
             if source_ip == configs["pyshark"]["host"]: continue
-            verified_ip_addresses.add(source_ip)
+            verified_ip_addresses.add(ipaddress.ip_address(source_ip))
     except:
         print_("pyshark listener:", traceback.format_exc())
 
@@ -898,9 +898,8 @@ def pyshark_verifier():
     ip_list = ip_lists[directories.allowlist.key]
     try:
         while True:
-            time.sleep(0.5)
-            for source_ip in verified_ip_addresses.copy():
-                ip_address = ipaddress.ip_address(source_ip)
+            time.sleep(1)
+            for ip_address in verified_ip_addresses.copy():
                 if ip_list.add_ip(ip_address):
                     print_("Verified new ip address: {}".format(ip_address))
             verified_ip_addresses.clear()
@@ -911,7 +910,7 @@ def ipset_blacklist():
     ip_list = ip_lists[directories.blacklist.key]
     try:
         while True:
-            time.sleep(10)
+            time.sleep(20)
             kwargs = {
                 "name" : configs["ipset"]["blacklist"],
             }
