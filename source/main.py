@@ -911,7 +911,7 @@ def ipset_blacklist():
     ip_list = ip_lists[directories.blacklist.key]
     try:
         while True:
-            time.sleep(2)
+            time.sleep(10)
             kwargs = {
                 "name" : configs["ipset"]["blacklist"],
             }
