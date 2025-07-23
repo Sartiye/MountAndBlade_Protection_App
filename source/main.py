@@ -270,7 +270,7 @@ def import_commands(directory):
 
 
 class IP_List():
-    def __init__(self, directory, size = None, remote_controlled = False):
+    def __init__(self, directory, size = -1, remote_controlled = False):
         self.directory = directory
         self.size = size
         self.is_remote = remote_controlled
