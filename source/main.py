@@ -124,6 +124,7 @@ base_configs = {
     "ipset" : {
         "active" : False,
         "name" : "allowlist",
+        "blacklist" : "",
     },
     "google cloud" : {
         "active" : False,
@@ -897,7 +898,7 @@ def pyshark_verifier():
     ip_list = ip_lists[directories.allowlist.key]
     try:
         while True:
-            time.sleep(1)
+            time.sleep(0.5)
             for source_ip in verified_ip_addresses.copy():
                 ip_address = ipaddress.ip_address(source_ip)
                 if ip_list.add_ip(ip_address):
@@ -905,6 +906,27 @@ def pyshark_verifier():
             verified_ip_addresses.clear()
     except:
         print_("pyshark verifier:", traceback.format_exc())
+
+def ipset_blacklist():
+    ip_list = ip_lists[directories.blacklist.key]
+    try:
+        while True:
+            time.sleep(2)
+            kwargs = {
+                "name" : configs["ipset"]["blacklist"],
+            }
+            data = subprocess.check_output(
+                commands["ipset"]["list"].format(**kwargs),
+                shell = True,
+                stderr = subprocess.PIPE,
+            ).decode().splitlines()
+            ip_addresses = data[data.index("Members:") + 1:]
+            for source_ip in ip_addresses:
+                ip_address = ipaddress.ip_address(source_ip)
+                if ip_list.add_ip(ip_address):
+                    print_("Blocked new ip address: {}".format(ip_address))
+    except:
+        print_("ipset blacklist:", traceback.format_exc())
 
 def cloudflare_communicator():
     while True:
@@ -1143,6 +1165,9 @@ try:
         rule = IPSet()
         if rule.defined:
             rule_list.append(rule)
+            
+    if configs["ipset"]["blacklist"]:
+        threading.Thread(target = ipset_blacklist).start()
 
     if configs["google cloud"]["active"]:
         rule = Google_Cloud()
