@@ -282,7 +282,7 @@ class IP_List():
     def set_ip_list(self, ip_list):
         if ip_list == self.ip_list:
             return
-        if self.size != None:
+        if self.size != -1:
             ip_list = ip_list[max(len(ip_list) - self.size, 0):]
         with self.lock:
             self.ip_list = ip_list
