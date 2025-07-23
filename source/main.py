@@ -286,7 +286,7 @@ class IP_List():
             ip_list = ip_list[max(len(ip_list) - self.size, 0):]
         with self.lock:
             self.ip_list = ip_list
-            Event_Handler.file_call = True
+##            Event_Handler.file_call = True
             with open(self.directory, mode = "w") as file:
                 file.write("\n".join([format(ip_address) for ip_address in self.ip_list]))
 
@@ -422,20 +422,20 @@ class IP_UID_Manager():
         return unique_id
 
 
-class Event_Handler(FileSystemEventHandler):
-    file_call = False
-    def __init__(self):
-        FileSystemEventHandler.__init__(self)
-        
-    def on_modified(self, event):
-        for directory_key, ip_list in ip_lists.items():
-            if event.src_path == ip_list.directory.string():
-                if not Event_Handler.file_call:
-                    print_("Data change detected on file: {}".format(ip_list.directory.basename()))
-                    ip_list._import()
-                Event_Handler.file_call = False
-                rule_updater.update = True
-                break
+##class Event_Handler(FileSystemEventHandler):
+##    file_call = False
+##    def __init__(self):
+##        FileSystemEventHandler.__init__(self)
+##        
+##    def on_modified(self, event):
+##        for directory_key, ip_list in ip_lists.items():
+##            if event.src_path == ip_list.directory.string():
+##                if not Event_Handler.file_call:
+##                    print_("Data change detected on file: {}".format(ip_list.directory.basename()))
+##                    ip_list._import()
+##                Event_Handler.file_call = False
+##                rule_updater.update = True
+##                break
 
 
 class Rule():
@@ -899,9 +899,13 @@ def pyshark_verifier():
     try:
         while True:
             time.sleep(1)
+            verified_new = False
             for ip_address in verified_ip_addresses.copy():
                 if ip_list.add_ip(ip_address):
                     print_("Verified new ip address: {}".format(ip_address))
+                    verified_new = True
+            if verified_new:
+                rule_updater.update = True
             verified_ip_addresses.clear()
     except:
         print_("pyshark verifier:", traceback.format_exc())
@@ -1199,9 +1203,9 @@ try:
     rule_updater.force = True
     rule_updater.start()
 
-    observer = Observer()
-    observer.schedule(Event_Handler(), directories.data.string())
-    observer.start()
+##    observer = Observer()
+##    observer.schedule(Event_Handler(), directories.data.string())
+##    observer.start()
 
     time.sleep(1)
 
