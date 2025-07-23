@@ -31,7 +31,7 @@ socket.getaddrinfo = ipv4_only_getaddrinfo
 
 eval_string = ""
 
-def print_(*string, sep = " ", end = "\n", flush = False):
+def print_(*string, sep = " ", end = "\n", flush = True):
     if eval_string:
         print("\r" + " " * len(eval_string) + "\r", end = ""),
     print("[{}]".format(datetime.datetime.now().strftime("%H:%M:%S")), *string, sep = sep, end = end, flush = flush)
