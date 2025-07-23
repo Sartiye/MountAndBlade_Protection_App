@@ -830,7 +830,7 @@ class Rule_Updater(threading.Thread):
     def run(self):
         while True:
             try:
-                if not self.update:
+                if not self.update or not configs["IP UIDs"]["rule updater delay"]:
                     time.sleep(1); continue
                 self.update = False
 
