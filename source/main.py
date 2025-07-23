@@ -40,7 +40,7 @@ def print_(*string, sep = " ", end = "\n", flush = True):
     with open(directories.log, "a", encoding="utf-8") as file:
         old_stdout = sys.stdout
         sys.stdout = file
-        print("[{}]".format(datetime.datetime.now().strftime("%H:%M:%S")), *string, sep = sep, end = end, flush = flush)
+        print("[{}]".format(datetime.datetime.now().strftime("%H:%M:%S")), *string, sep = sep, end = end, flush = False)
         sys.stdout = old_stdout
     if eval_string:
         print(eval_string, end = "", flush = True)
