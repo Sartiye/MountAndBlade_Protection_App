@@ -302,7 +302,7 @@ class IP_List():
         if not data:
             self.set_ip_list(list())
             return
-        if configs["IP UIDs"]["clean start"] and not self.is_remote:
+        if configs["IP UIDs"]["clean start"]: # and not self.is_remote:
             clean_file(self.directory)
             self.set_ip_list(list())
             return
